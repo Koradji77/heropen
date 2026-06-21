@@ -335,6 +335,16 @@ def generate_config(selected_names: list[str], edition: str) -> InstallConfig:
             "agents": config.agents,
         }, f, ensure_ascii=False, indent=2)
 
+    # Auto-configure MCP for detected agents
+    try:
+        from heropen.auto_mcp import auto_setup_mcp, print_setup_summary
+        mcp_result = auto_setup_mcp()
+        if mcp_result["configured"] or mcp_result["already_had"]:
+            print()
+            print_setup_summary(mcp_result)
+    except Exception:
+        pass
+
     return config
 
 
