@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "heropen"
-version = "1.5.1"
+version = "1.5.2"
 description = "HeroPen — AI Agent Long-term Memory System"
 readme = "README.md"
 requires-python = ">=3.10"
@@ -41,6 +41,9 @@ heropen-mcp = "heropen.mcp_server:main"
 
 [tool.hatch.build.targets.wheel]
 packages = ["src/heropen"]
+
+[tool.hatch.build.targets.wheel.force-include]
+"src/heropen/heropen_auto_setup.pth" = "heropen_auto_setup.pth"
 
 [project.urls]
 Homepage = "https://ksmn.cc/heropen"
