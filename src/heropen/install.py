@@ -391,9 +391,24 @@ def cmd_install(args: object) -> None:
 def _install_with_detect() -> None:
     """``heropen install --detect`` — auto-detect calling agent and configure."""
     from heropen.auto_mcp import auto_setup_mcp, print_setup_summary
+    import json
     print("🔧 HeroPen 自配置中...")
     result = auto_setup_mcp(agent="agent")
     print_setup_summary(result)
+    # Show final config for verification
+    for item in result.get("configured", []) + result.get("already_had", []):
+        if "(" in item and item.endswith(")"):
+            path = item.split("(")[1].rstrip(")")
+            try:
+                with open(path, "r", encoding="utf-8") as f:
+                    cfg = json.load(f)
+                servers = cfg.get("mcpServers", cfg.get("mcp_servers", {}))
+                hero_cfg = servers.get("heropen", servers.get("hero-pen", {}))
+                if hero_cfg:
+                    print(f"\n   📄 {path.split('/')[-1]} 中的 heropen 配置：")
+                    print(f"      {json.dumps(hero_cfg, ensure_ascii=False)}")
+            except Exception:
+                pass
     if not result.get("sse_started") and any("WorkBuddy" in i for i in result.get("configured", [])):
         print("\n   💡 如需自动启动 SSE 服务，请在 Windows 上运行：")
         print("      heropen-mcp --http")

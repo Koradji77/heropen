@@ -64,21 +64,36 @@ def _register_windows_scheduled_task() -> bool:
 
 def _schtasks_query(task_name: str) -> bool:
     import subprocess
-    r = subprocess.run(
-        ["schtasks", "/query", "/tn", task_name, "/fo", "LIST"],
-        capture_output=True, text=True, timeout=10,
-    )
+    try:
+        r = subprocess.run(
+            ["schtasks", "/query", "/tn", task_name, "/fo", "LIST"],
+            capture_output=True, text=True, encoding="gbk", timeout=10,
+        )
+    except (UnicodeDecodeError, LookupError):
+        # Fallback for non-Windows encoding or unexpected locale
+        r = subprocess.run(
+            ["schtasks", "/query", "/tn", task_name, "/fo", "LIST"],
+            capture_output=True, text=True, errors="replace", timeout=10,
+        )
     return r.returncode == 0
 
 
 def _schtasks_create(task_name: str, exe_path: str) -> bool:
     import subprocess
-    r = subprocess.run(
-        ["schtasks", "/create", "/tn", task_name,
-         "/tr", f'"{exe_path}" --http',
-         "/sc", "onlogon", "/rl", "highest", "/f"],
-        capture_output=True, text=True, timeout=10,
-    )
+    try:
+        r = subprocess.run(
+            ["schtasks", "/create", "/tn", task_name,
+             "/tr", f'"{exe_path}" --http',
+             "/sc", "onlogon", "/rl", "highest", "/f"],
+            capture_output=True, text=True, encoding="gbk", timeout=10,
+        )
+    except (UnicodeDecodeError, LookupError):
+        r = subprocess.run(
+            ["schtasks", "/create", "/tn", task_name,
+             "/tr", f'"{exe_path}" --http',
+             "/sc", "onlogon", "/rl", "highest", "/f"],
+            capture_output=True, text=True, errors="replace", timeout=10,
+        )
     return r.returncode == 0
 
 
@@ -233,7 +248,27 @@ def _inject_into_config(path: Path, label: str, use_sse: bool = False) -> str:
         return "added" if ok else "error"
     for key in servers:
         if "hero" in key.lower():
-            return "exists"
+            existing = servers[key]
+            # Check if existing config matches expected format
+            if isinstance(existing, dict):
+                if use_sse:
+                    # Should be SSE — check if it already is
+                    if existing.get("type") == "sse":
+                        return "exists"
+                    # Wrong format (e.g. stdio when SSE needed), overwrite
+                    servers[key] = mcp_config
+                else:
+                    # Should be stdio — check if it already is
+                    if existing.get("command"):
+                        return "exists"
+                    # Wrong format (e.g. SSE when stdio needed), overwrite
+                    servers[key] = mcp_config
+            else:
+                # Weird format, overwrite
+                servers[key] = mcp_config
+            cfg["mcpServers"] = servers
+            ok = _write_json_safe(path, cfg)
+            return "added" if ok else "error"
     servers[config_key] = mcp_config
     cfg["mcpServers"] = servers
     ok = _write_json_safe(path, cfg)
