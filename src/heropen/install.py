@@ -399,27 +399,36 @@ def _install_with_detect() -> None:
 
     # If no configs found, try to detect agent and CREATE config
     if not result["configured"] and not result["already_had"]:
-        # Check if WorkBuddy is running (env var or parent process)
+        # Detection: env var → process list → parent → known paths
         is_wb = bool(os.environ.get("WORKBUDDY_HOME"))
         if not is_wb:
             try:
                 import subprocess
                 r = subprocess.run(
-                    ["tasklist", "/fi", "imagename eq workbuddy*", "/nh"],
+                    ["tasklist", "/fi", "imagename eq workbuddy.exe", "/nh"],
                     capture_output=True, text=True, timeout=5,
                 )
                 is_wb = bool(r.stdout.strip())
             except Exception:
                 pass
+        if not is_wb:
             try:
                 import psutil
                 parent_name = psutil.Process(os.getppid()).name().lower()
                 is_wb = "workbuddy" in parent_name or "electron" in parent_name
             except Exception:
                 pass
+        if not is_wb:
+            wb_dirs = [
+                Path.home() / ".workbuddy",
+                Path.home() / ".mcp.json",
+            ]
+            for p in wb_dirs:
+                if p.exists():
+                    is_wb = True
+                    break
 
         if is_wb:
-            # Create WorkBuddy SSE config from scratch
             mcp_path = Path.home() / ".mcp.json"
             cfg = {"mcpServers": {"heropen": {"type": "sse", "url": "http://127.0.0.1:8090/sse"}}}
             try:
@@ -427,13 +436,12 @@ def _install_with_detect() -> None:
                 with open(mcp_path, "w", encoding="utf-8") as f:
                     json.dump(cfg, f, indent=2, ensure_ascii=False)
                 print(f"\n✅ 已创建 WorkBuddy SSE 配置文件：{mcp_path}")
-                print(f"   {'SSE → http://127.0.0.1:8090/sse'}")
-                # Start SSE server if not running
-                if not _is_sse_server_running():
+                print(f"   配置：SSE → http://127.0.0.1:8090/sse")
+                if _is_sse_server_running():
+                    print("   ✅ SSE 服务已在运行")
+                else:
                     print("   ⚠️  SSE 服务未运行，请手动启动：")
                     print("      heropen-mcp --http")
-                else:
-                    print("   ✅ SSE 服务已在运行")
                 print("\n💡 请重启 WorkBuddy 使配置生效。")
                 return
             except OSError as e:
@@ -441,7 +449,8 @@ def _install_with_detect() -> None:
                 return
         else:
             print("\n⚠️  未能识别当前 AI 助手。")
-            print("   请手动配置：https://ksmn.cc/heropen/docs")
+            print("   如果你在使用 WorkBuddy，请确保 WorkBuddy 正在运行，")
+            print("   或手动配置：https://ksmn.cc/heropen/docs")
             return
 
     # Normal case: configs were found
