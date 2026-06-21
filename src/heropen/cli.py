@@ -25,6 +25,15 @@ def main():
 
     args = sys.argv[1:]
     if not args:
+        # Auto-run install --detect if no config exists yet
+        from pathlib import Path
+        from heropen.core import HERO_PEN_DIR
+        config_path = Path(HERO_PEN_DIR) / "agent-config.json"
+        if not config_path.exists():
+            print("🖊  HeroPen 首次运行，正在自动配置...\n")
+            from heropen.install import cmd_install
+            cmd_install(["--detect"])
+            return
         print_help()
         return
 
