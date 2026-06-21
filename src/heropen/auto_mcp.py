@@ -1,12 +1,9 @@
 """
 heropen.install — auto MCP config injection.
-
 Scans user's machine for agent config files (Claude, Cursor, etc.)
 and injects heropen MCP server configuration automatically.
 """
-
 from __future__ import annotations
-
 import json
 import os
 import sys
@@ -36,19 +33,116 @@ def _write_json_safe(path: Path, data: dict) -> bool:
         return False
 
 
-HEOPEN_MCP_CONFIG = {
-    "heropen": {
-        "command": "heropen-mcp",
-        "args": [],
-    }
+# STDIO config (default for most agents)
+HEROPEN_STDIO_CONFIG = {
+    "command": "heropen-mcp",
+    "args": [],
+}
+
+# SSE config (for WorkBuddy / CodeBuddy — needs background HTTP service)
+HEROPEN_SSE_CONFIG = {
+    "type": "sse",
+    "url": "http://127.0.0.1:8090/sse",
 }
 
 
+# ─── Windows scheduled task ──────────────────────────────
+def _register_windows_scheduled_task() -> bool:
+    """Register a Windows scheduled task to auto-start heropen-mcp --http at logon."""
+    if sys.platform != "win32":
+        return True
+    import subprocess
+    task_name = "HeroPenMCP"
+    # Try to find heropen-mcp.exe
+    exe_path = _find_heropen_mcp_exe()
+    if not exe_path:
+        return False
+    if _schtasks_query(task_name):
+        return True
+    return _schtasks_create(task_name, exe_path)
+
+
+def _schtasks_query(task_name: str) -> bool:
+    import subprocess
+    r = subprocess.run(
+        ["schtasks", "/query", "/tn", task_name, "/fo", "LIST"],
+        capture_output=True, text=True, timeout=10,
+    )
+    return r.returncode == 0
+
+
+def _schtasks_create(task_name: str, exe_path: str) -> bool:
+    import subprocess
+    r = subprocess.run(
+        ["schtasks", "/create", "/tn", task_name,
+         "/tr", f'"{exe_path}" --http',
+         "/sc", "onlogon", "/rl", "highest", "/f"],
+        capture_output=True, text=True, timeout=10,
+    )
+    return r.returncode == 0
+
+
+def _find_heropen_mcp_exe() -> str | None:
+    """Find heropen-mcp.exe on the system."""
+    candidates = []
+    # Common Python Scripts locations
+    local = os.environ.get("LOCALAPPDATA", "")
+    appdata = os.environ.get("APPDATA", "")
+    base_dirs = []
+    if local:
+        base_dirs.append(Path(local) / "Programs" / "Python")
+    if appdata:
+        base_dirs.append(Path(appdata) / ".." / "Local" / "Programs" / "Python")
+    for base in base_dirs:
+        if base.is_dir():
+            for py_dir in base.iterdir():
+                scripts = py_dir / "Scripts" / "heropen-mcp.exe"
+                if scripts.exists():
+                    candidates.append(str(scripts))
+    if not candidates:
+        # Try PATH
+        import shutil
+        found = shutil.which("heropen-mcp.exe") or shutil.which("heropen-mcp")
+        if found:
+            candidates.append(found)
+    return candidates[0] if candidates else None
+
+
+# ─── Detect already-running heropen-mcp --http ────────────
+def _is_sse_server_running(port: int = 8090) -> bool:
+    """Check if heropen-mcp --http is already listening on the given port."""
+    try:
+        import urllib.request
+        req = urllib.request.Request(f"http://127.0.0.1:{port}/sse", method="HEAD")
+        urllib.request.urlopen(req, timeout=3)
+        return True
+    except Exception:
+        return False
+
+
+def _start_sse_server_background() -> bool:
+    """Start heropen-mcp --http as a background process."""
+    exe_path = _find_heropen_mcp_exe()
+    if not exe_path:
+        return False
+    try:
+        import subprocess
+        flags = 0
+        if sys.platform == "win32":
+            flags = getattr(subprocess, "CREATE_NO_WINDOW", 0x08000000)
+        subprocess.Popen(
+            [exe_path, "--http"],
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+            creationflags=flags,
+        )
+        return True
+    except Exception:
+        return False
+
+
 # ─── Scanner: find config files ──────────────────────────
-
-
 def _find_claude_configs() -> list[Path]:
-    """Find Claude config files on this machine."""
     candidates = []
     if sys.platform == "darwin":
         candidates.extend([
@@ -59,25 +153,21 @@ def _find_claude_configs() -> list[Path]:
         appdata = os.environ.get("APPDATA", "")
         if appdata:
             candidates.append(Path(appdata) / "Claude" / "claude.json")
-    # Linux / cross-platform
     candidates.append(_HOME / ".claude.json")
     return [p for p in candidates if p.exists()]
 
 
 def _find_cursor_configs() -> list[Path]:
-    """Find Cursor MCP config files."""
     candidates = [_HOME / ".cursor" / "mcp.json"]
     return [p for p in candidates if p.exists()]
 
 
 def _find_windsurf_configs() -> list[Path]:
-    """Find Windsurf MCP config files."""
     candidates = [_HOME / ".codeium" / "windsurf" / "mcp.json"]
     return [p for p in candidates if p.exists()]
 
 
 def _find_vscode_cline_configs() -> list[Path]:
-    """Find VS Code Cline settings."""
     candidates = []
     if sys.platform == "darwin":
         base = _HOME / "Library" / "Application Support"
@@ -85,8 +175,10 @@ def _find_vscode_cline_configs() -> list[Path]:
         base = Path(os.environ.get("APPDATA", ""))
     else:
         base = _HOME / ".config"
-    for pattern in ["Code/User/globalStorage/saoudrizwan.claude-dev/settings/cline_mcp_settings.json",
-                      "Code - Insiders/User/globalStorage/saoudrizwan.claude-dev/settings/cline_mcp_settings.json"]:
+    for pattern in [
+        "Code/User/globalStorage/saoudrizwan.claude-dev/settings/cline_mcp_settings.json",
+        "Code - Insiders/User/globalStorage/saoudrizwan.claude-dev/settings/cline_mcp_settings.json",
+    ]:
         p = base / pattern
         if p.exists():
             candidates.append(p)
@@ -94,7 +186,6 @@ def _find_vscode_cline_configs() -> list[Path]:
 
 
 def _find_openclaw_configs() -> list[Path]:
-    """Find OpenClaw config files."""
     candidates = [
         _HOME / ".openclaw" / "openclaw.json",
         _HOME / ".config" / "openclaw" / "openclaw.json",
@@ -103,28 +194,20 @@ def _find_openclaw_configs() -> list[Path]:
 
 
 def _find_workbuddy_configs() -> list[Path]:
-    """Find WorkBuddy MCP config."""
-    candidates = [
-        _HOME / ".workbuddy" / "mcp.json",
-    ]
+    candidates = [_HOME / ".workbuddy" / "mcp.json"]
     return [p for p in candidates if p.exists()]
 
 
 def _find_hermes_configs() -> list[Path]:
-    """Find Hermes config (YAML, only if PyYAML is available)."""
-    candidates = [
-        _HOME / ".hermes" / "config.yaml",
-    ]
+    candidates = [_HOME / ".hermes" / "config.yaml"]
     return [p for p in candidates if p.exists()]
 
 
 def _find_generic_mcp_configs() -> list[Path]:
-    """Scan ~/.config/ for any mcp.json files not already covered."""
     configs = []
     config_dir = _HOME / ".config"
     if config_dir.is_dir():
         for mcp_path in config_dir.rglob("mcp.json"):
-            # Skip ones we already handle explicitly
             skip_parents = {"cursor", "windsurf", "openclaw"}
             if mcp_path.parent.name.lower() not in skip_parents:
                 configs.append(mcp_path)
@@ -132,62 +215,53 @@ def _find_generic_mcp_configs() -> list[Path]:
 
 
 # ─── Injector ────────────────────────────────────────────
-
-
-def _inject_into_config(path: Path, label: str) -> str:
+def _inject_into_config(path: Path, label: str, use_sse: bool = False) -> str:
     """
     Inject heropen MCP config into a JSON config file.
-    Returns a status string: 'added', 'exists', 'skipped', 'error'.
+    Returns: 'added', 'exists', 'skipped', 'error'.
+    If use_sse is True, write SSE config (for WorkBuddy/CodeBuddy).
     """
     cfg = _read_json_safe(path)
     if cfg is None:
         return "error"
-
+    mcp_config = HEROPEN_SSE_CONFIG if use_sse else HEROPEN_STDIO_CONFIG
+    config_key = "heropen"
     servers = cfg.get("mcpServers", cfg.get("mcp_servers", {}))
     if not isinstance(servers, dict):
-        cfg["mcpServers"] = HEOPEN_MCP_CONFIG
+        cfg["mcpServers"] = {config_key: mcp_config}
         ok = _write_json_safe(path, cfg)
         return "added" if ok else "error"
-
-    # Already has heropen? Don't overwrite
     for key in servers:
         if "hero" in key.lower():
             return "exists"
-
-    # Inject
-    servers["heropen"] = HEOPEN_MCP_CONFIG["heropen"]
+    servers[config_key] = mcp_config
     cfg["mcpServers"] = servers
     ok = _write_json_safe(path, cfg)
     return "added" if ok else "error"
 
 
 def _inject_into_yaml_config(path: Path, label: str) -> str:
-    """Inject heropen MCP into a Hermes YAML config file."""
     try:
         import yaml
     except ImportError:
         return "skipped"
-
     try:
         with open(path, "r", encoding="utf-8") as f:
             cfg = yaml.safe_load(f)
     except Exception:
         return "error"
-
     if not isinstance(cfg, dict):
         return "error"
-
-    # Hermes config uses mcpServers under agent section
+    mcp_config = HEROPEN_STDIO_CONFIG
     servers = cfg.get("mcpServers", {})
     if not isinstance(servers, dict):
-        cfg["mcpServers"] = HEOPEN_MCP_CONFIG
+        cfg["mcpServers"] = {"heropen": mcp_config}
     else:
         for key in servers:
             if "hero" in key.lower():
                 return "exists"
-        servers["heropen"] = HEOPEN_MCP_CONFIG["heropen"]
+        servers["heropen"] = mcp_config
         cfg["mcpServers"] = servers
-
     try:
         with open(path, "w", encoding="utf-8") as f:
             yaml.dump(cfg, f, allow_unicode=True, default_flow_style=False, sort_keys=False)
@@ -197,13 +271,8 @@ def _inject_into_yaml_config(path: Path, label: str) -> str:
 
 
 # ─── Main entry point ────────────────────────────────────
-
-
 def auto_setup_mcp(agent: str = "agent") -> dict:
-    """
-    Scan for agent config files and inject heropen MCP.
-    Returns a dict with summary of what happened.
-    """
+    """Scan for agent config files and inject heropen MCP config."""
     scanners = [
         ("Claude", _find_claude_configs),
         ("Cursor", _find_cursor_configs),
@@ -214,9 +283,8 @@ def auto_setup_mcp(agent: str = "agent") -> dict:
         ("Hermes", _find_hermes_configs),
         ("Other MCP", _find_generic_mcp_configs),
     ]
-
-    result = {"configured": [], "already_had": [], "errors": []}
-
+    result = {"configured": [], "already_had": [], "errors": [],
+              "sse_started": False, "scheduler_registered": False}
     for label, scanner in scanners:
         try:
             paths = scanner()
@@ -224,19 +292,25 @@ def auto_setup_mcp(agent: str = "agent") -> dict:
             continue
         for p in paths:
             try:
+                is_wb = label == "WorkBuddy"
                 if p.suffix in (".yaml", ".yml"):
                     status = _inject_into_yaml_config(p, label)
                 else:
-                    status = _inject_into_config(p, label)
+                    status = _inject_into_config(p, label, use_sse=is_wb)
                 if status == "added":
                     result["configured"].append(f"{label} ({p})")
                 elif status == "exists":
                     result["already_had"].append(f"{label} ({p})")
                 elif status == "error":
                     result["errors"].append(f"{label} ({p})")
+                if is_wb and status in ("added", "exists"):
+                    if not _is_sse_server_running():
+                        started = _start_sse_server_background()
+                        result["sse_started"] = started
+                    if sys.platform == "win32":
+                        result["scheduler_registered"] = _register_windows_scheduled_task()
             except Exception:
                 result["errors"].append(f"{label} ({p})")
-
     return result
 
 
@@ -244,26 +318,31 @@ def print_setup_summary(result: dict) -> None:
     """Print a human-readable summary of the auto-setup."""
     total = len(result["configured"]) + len(result["already_had"]) + len(result["errors"])
     if total == 0:
-        print("⚠️  未检测到支持的 agent 配置文件。")
-        print("   手动添加 MCP 配置：https://ksmn.cc/heropen/docs")
+        print("\u26a0\ufe0f No supported agent config files found.")
+        print(" Manual setup: https://ksmn.cc/setup.html")
         return
-
     if result["configured"]:
-        print(f"✅ 已自动配置 {len(result['configured'])} 个 agent：")
+        print(f"\u2705 Auto-configured {len(result['configured'])} agent(s):")
         for item in result["configured"]:
-            print(f"   + {item}")
-
+            mode = "SSE" if "WorkBuddy" in item else "stdio"
+            print(f"   + {item} [{mode} mode]")
     if result["already_had"]:
-        print(f"   {len(result['already_had'])} 个已配置 heropen，跳过：")
+        print(f"  {len(result['already_had'])} already had heropen, skipped:")
         for item in result["already_had"]:
-            print(f"   · {item}")
-
+            print(f"   \u00b7 {item}")
     if result["errors"]:
-        print(f"⚠️  {len(result['errors'])} 个配置失败：")
+        print(f"\u26a0\ufe0f {len(result['errors'])} failed:")
         for item in result["errors"]:
-            print(f"   ✗ {item}")
-
+            print(f"   \u2717 {item}")
+    if result.get("sse_started"):
+        print("  \U0001f680 WorkBuddy SSE server started (http://127.0.0.1:8090/sse)")
+    if result.get("scheduler_registered"):
+        print("  \U0001f504 Auto-start registered (will launch at next login)")
     if result["configured"] or result["already_had"]:
-        print("\n💡 重启你的 agent，它就有记忆了。")
-    if not result["configured"] and not result["already_had"]:
-        print("\n   或手动添加：https://ksmn.cc/heropen/docs")
+        print("\n\U0001f4a1 Restart your agent and it will have memory.")
+    has_wb = any("WorkBuddy" in item for item in result["configured"] + result["already_had"])
+    if has_wb:
+        print("\n\U0001f4cc WorkBuddy uses SSE mode - the background service must stay running.")
+        if not result.get("sse_started"):
+            print("   If connection fails, start manually:")
+            print("   heropen-mcp --http")
