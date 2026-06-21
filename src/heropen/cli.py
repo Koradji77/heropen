@@ -37,6 +37,12 @@ def main():
         cmd_install(args[1:])
         return
 
+    # ── Auto MCP setup (v1.4.0) ─────────────────────────
+    if cmd in ("auto-setup", "setup-mcp", "auto"):
+        from heropen.cli_commands import cmd_auto_setup
+        cmd_auto_setup(args[1:])
+        return
+
     # ── Existing commands (all lazy-loaded) ─────────────
     if cmd == "init":
         from heropen.cli_commands import cmd_init
@@ -111,13 +117,17 @@ def main():
 
 def print_help():
     help_text = f"""
-HeroPen v1.2.0 — AI Agent Long-term Memory System
+HeroPen v1.4.0 — AI Agent Long-term Memory System
 
 Usage:
     heropen <command> [options]
 
 Commands:
     install         Interactive install wizard (NEW in v1.2.0)
+    auto-setup      One-command DB init + auto MCP config (NEW in v1.4.0)
+    setup           Alias for install
+    setup-mcp       Alias for auto-setup
+    auto            Alias for auto-setup
     init            Initialize agent memory database
     add             Add a new memory entry
     recall          Search and recall memories

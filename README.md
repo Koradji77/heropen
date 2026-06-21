@@ -10,10 +10,14 @@
 
 ```bash
 pip install heropen
-heropen init
+heropen auto-setup
 ```
 
-两行搞定。装完会在 `~/.heropen/` 建好数据库。
+两行搞定。会装好数据库、自动检测你的 agent（Claude Code / Cursor / Windsurf 等），配好 MCP。
+
+装完**重启 agent**，它就有记忆了。
+
+如果你用 `heropen install` 可以走交互式向导手动选择。
 
 ## 快速开始
 
@@ -30,7 +34,9 @@ heropen status
 
 ## 接入 Agent（MCP 协议）
 
-主流 agent 工具都能接。以 Claude Code 为例，在配置里加上：
+主流 agent 工具都能接。`heropen auto-setup` 会自动检测并配置。
+
+也可以手动配，在 agent 的配置里加上：
 
 ```json
 {

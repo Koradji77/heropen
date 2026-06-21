@@ -132,6 +132,23 @@ def cmd_init(args: list[str]) -> None:
     print(f"✅ HeroPen 数据库已初始化 [agent: {agent}]")
 
 
+def cmd_auto_setup(args: list[str]) -> None:
+    """heropen auto-setup — init DB + auto-configure MCP for all detected agents."""
+    from heropen.auto_mcp import auto_setup_mcp, print_setup_summary
+
+    agent = _resolve_agent(args)
+    print(f"🔧 HeroPen 自动配置中...\n")
+    
+    # Step 1: Init DB
+    init_db(agent)
+    print(f"✅ 数据库已初始化 [agent: {agent}]")
+    
+    # Step 2: Auto-inject MCP into detected agents
+    print(f"🔍 扫描本机 agent 配置文件...")
+    result = auto_setup_mcp(agent)
+    print_setup_summary(result)
+
+
 def cmd_sync(args: list[str]) -> None:
     agent = _resolve_agent(args)
     n = sync_to_db(agent)
