@@ -4,7 +4,7 @@ Self-hosted, MCP-native memory system with vector + FTS + LIKE search,
 automatic backup, crash recovery, and multi-agent isolation.
 """
 
-__version__ = "1.5.3"
+__version__ = "1.6.0"
 __all__ = [
     "add_entry", "update_entry",
     "search_vector", "search_fts", "search_graph",

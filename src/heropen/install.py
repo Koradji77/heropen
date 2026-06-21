@@ -596,6 +596,78 @@ def _install_with_detect() -> None:
     _show_copy_text_dialog()
 
 
+def cmd_first_run() -> None:
+    """``heropen`` first-run — auto-init + output copy-paste text for AI.
+
+    The user copies the text block and pastes it to their AI assistant.
+    The AI reads it and knows how to use HeroPen memory.
+    """
+    from heropen.auto_mcp import auto_setup_mcp
+
+    agent_name = "agent"
+
+    # 1. Init DB
+    init_db(agent_name)
+
+    # 2. Try to auto-configure MCP (don't show output, just do it)
+    had_mcp = False
+    try:
+        mcp_result = auto_setup_mcp(agent=agent_name)
+        had_mcp = bool(mcp_result.get("configured") or mcp_result.get("already_had"))
+    except Exception:
+        pass
+
+    # 3. Build the copy-paste text block
+    lines = [
+        "━" * 70,
+        "🖊  HeroPen 已安装",
+        "   复制下面这段话发给你的 AI 助手，它会自己配置",
+        "━" * 70,
+        "",
+        "【HeroPen 身份配置 — 请存入你的长期记忆】",
+        "",
+        f"你叫 {agent_name}，现在拥有 HeroPen 记忆系统。",
+        f"你的记忆库在：{os.path.join(HERO_PEN_DIR, f'{agent_name}.db')}",
+        "",
+    ]
+
+    if had_mcp:
+        lines.extend([
+            "MCP 服务已自动配置，你的 AI 可以直接调用记忆工具。",
+        ])
+    else:
+        lines.extend([
+            "MCP 配置方式（如果 AI 支持）：",
+            f"  配置名：heropen",
+            f"  命令：heropen-mcp",
+            f"  类型：stdio",
+        ])
+    lines.extend([
+        "",
+        "每次对话开始时，调用 search_memory 工具：",
+        f'  query: "最近的对话"',
+        f'  agent: "{agent_name}"',
+        "",
+        "每次对话结束前，调用 add_memory 工具保存本次对话摘要：",
+        '  section: "对话记录"',
+        "  content: （本次对话的摘要——你自己总结，抓住重点）",
+        f'  agent: "{agent_name}"',
+        "",
+        "以后回答时，看到跟记忆里已有信息相关的话题，",
+        "先调 search_memory 看看之前说过什么，避免重复问用户。",
+        "",
+        "【结束】",
+        "",
+        "━" * 70,
+        "粘贴发送后，AI 助手会自动理解并开始使用 HeroPen 记忆系统。",
+        "━" * 70,
+    ])
+
+    print("")
+    print("\n".join(lines))
+    print("")
+
+
 def _print_banner(use_rich: bool = False) -> None:
     """Print the HeroPen install banner."""
     if use_rich:
