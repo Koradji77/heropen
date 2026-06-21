@@ -388,12 +388,30 @@ def cmd_install(args: object) -> None:
         _install_plain()
 
 
-def _show_copy_text_dialog(agent_name: str = "agent") -> None:
+def _show_copy_text_dialog(agent_name: str = "") -> None:
     """Show a tkinter dialog with one-click copy of AI instruction text."""
+    # Try to read real agent name from existing config
+    if not agent_name:
+        try:
+            with open(AGENT_CONFIG_PATH, "r", encoding="utf-8") as f:
+                cfg = json.load(f)
+            agents = cfg.get("agents", [])
+            if agents:
+                agent_name = agents[0]["name"]
+        except Exception:
+            pass
+
+    if agent_name:
+        name_line = f"你叫 {agent_name}，现在拥有 HeroPen 记忆系统。\n"
+        agent_arg = f'  agent: "{agent_name}"\n'
+    else:
+        name_line = "你现在拥有 HeroPen 记忆系统。\n"
+        agent_arg = "  agent: \"你的名字\"\n"
+
     text = (
         "【HeroPen 身份配置 — 请存入你的长期记忆】\n"
         "\n"
-        f"你叫 {agent_name}，现在拥有 HeroPen 记忆系统。\n"
+        + name_line +
         "\n"
         "MCP 服务已就绪，连接方式：\n"
         "  MCP 配置名：heropen\n"
@@ -401,13 +419,13 @@ def _show_copy_text_dialog(agent_name: str = "agent") -> None:
         "  类型：stdio\n"
         "\n"
         "每次对话开始时，先调用 search_memory 工具（MCP 工具，不是命令行）：\n"
-        f'  query: "最近的对话"\n'
-        f'  agent: "{agent_name}"\n'
+        '  query: "最近的对话"\n'
+        + agent_arg +
         "\n"
         "每次对话结束前，调用 add_memory 工具（MCP 工具）保存本次对话：\n"
         '  section: "对话记录"\n'
         "  content: （本次对话的摘要——你自己总结，抓住重点）\n"
-        f'  agent: "{agent_name}"\n'
+        + agent_arg +
         "\n"
         "以后回答时，看到跟记忆里已有信息相关的话题，\n"
         "先调 search_memory 看看之前说过什么，避免重复问用户。\n"
