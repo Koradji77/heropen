@@ -388,6 +388,97 @@ def cmd_install(args: object) -> None:
         _install_plain()
 
 
+def _show_copy_text_dialog(agent_name: str = "agent") -> None:
+    """Show a tkinter dialog with one-click copy of AI instruction text."""
+    text = (
+        "我是HeroPen，一个AI长期记忆系统。\n"
+        "\n"
+        "MCP服务已就绪。\n"
+        "请将我配置为你的MCP服务器：\n"
+        "\n"
+        "MCP配置名：heropen\n"
+        "启动命令：heropen-mcp\n"
+        "类型：stdio\n"
+        "\n"
+        "配置好后，每次对话你都可以用我读写记忆。\n"
+        "我准备好了，请连接我。"
+    )
+
+    try:
+        import tkinter as tk
+        from tkinter import scrolledtext
+
+        root = tk.Tk()
+        root.title("HeroPen — 复制给AI助手")
+        root.geometry("520x400")
+        root.resizable(False, False)
+        root.attributes("-topmost", True)
+
+        frame = tk.Frame(root, padx=20, pady=16)
+        frame.pack(fill=tk.BOTH, expand=True)
+
+        tk.Label(
+            frame,
+            text="🖊  HeroPen 已安装",
+            font=("Microsoft YaHei", 14, "bold"),
+            fg="#333"
+        ).pack(anchor=tk.W, pady=(0, 8))
+
+        tk.Label(
+            frame,
+            text="复制下面这段话发给你的AI助手，它会自己配置：",
+            font=("Microsoft YaHei", 10),
+            fg="#666",
+            wraplength=480
+        ).pack(anchor=tk.W, pady=(0, 12))
+
+        txt = scrolledtext.ScrolledText(
+            frame, wrap=tk.WORD, height=10,
+            font=("Consolas", 11),
+            bg="#f8f8f8", fg="#333",
+            relief=tk.FLAT, borderwidth=1,
+        )
+        txt.insert(tk.END, text)
+        txt.config(state=tk.DISABLED)
+        txt.pack(fill=tk.BOTH, expand=True, pady=(0, 12))
+
+        def copy():
+            root.clipboard_clear()
+            root.clipboard_append(text)
+            btn.config(text="✅ 已复制!", bg="#d4edda", fg="#333")
+            btn.config(state=tk.DISABLED)
+            root.after(2000, root.destroy)
+
+        btn = tk.Button(
+            frame,
+            text="📋 一键复制",
+            command=copy,
+            font=("Microsoft YaHei", 12, "bold"),
+            bg="#4a90d9", fg="white",
+            relief=tk.FLAT, padx=20, pady=8,
+            cursor="hand2",
+            activebackground="#357abd"
+        )
+        btn.pack(pady=(0, 4))
+
+        tk.Label(
+            frame,
+            text="复制后，在你的AI助手对话框里粘贴发送即可",
+            font=("Microsoft YaHei", 9),
+            fg="#999",
+        ).pack()
+
+        root.mainloop()
+    except ImportError:
+        # No tkinter — terminal fallback
+        print("\n" + "═" * 50)
+        print("🖊  HeroPen 已安装！请复制下面这段话发给你的AI助手：")
+        print("═" * 50)
+        print(text)
+        print("═" * 50)
+        print()
+
+
 def _install_with_detect() -> None:
     """``heropen install --detect`` — auto-detect calling agent and configure."""
     from heropen.auto_mcp import auto_setup_mcp, print_setup_summary, _is_sse_server_running
@@ -448,9 +539,9 @@ def _install_with_detect() -> None:
                 print(f"\n❌ 写入失败：{mcp_path}（{e}）")
                 return
         else:
-            print("\n⚠️  未能识别当前 AI 助手。")
-            print("   如果你在使用 WorkBuddy，请确保 WorkBuddy 正在运行，")
-            print("   或手动配置：https://ksmn.cc/heropen/docs")
+            print("\n⚠️  未能自动检测到 AI 助手。")
+            print("   弹出配置窗口，复制后发给你的 AI 助手即可。")
+            _show_copy_text_dialog()
             return
 
     # Normal case: configs were found
@@ -471,6 +562,9 @@ def _install_with_detect() -> None:
     if not result.get("sse_started") and any("WorkBuddy" in i for i in result.get("configured", [])):
         print("\n   💡 如需自动启动 SSE 服务，请在 Windows 上运行：")
         print("      heropen-mcp --http")
+
+    # Always show the copy dialog as a reliable fallback
+    _show_copy_text_dialog()
 
 
 def _print_banner(use_rich: bool = False) -> None:
