@@ -102,6 +102,22 @@ def _find_openclaw_configs() -> list[Path]:
     return [p for p in candidates if p.exists()]
 
 
+def _find_workbuddy_configs() -> list[Path]:
+    """Find WorkBuddy MCP config."""
+    candidates = [
+        _HOME / ".workbuddy" / "mcp.json",
+    ]
+    return [p for p in candidates if p.exists()]
+
+
+def _find_hermes_configs() -> list[Path]:
+    """Find Hermes config (YAML, only if PyYAML is available)."""
+    candidates = [
+        _HOME / ".hermes" / "config.yaml",
+    ]
+    return [p for p in candidates if p.exists()]
+
+
 def _find_generic_mcp_configs() -> list[Path]:
     """Scan ~/.config/ for any mcp.json files not already covered."""
     configs = []
@@ -145,6 +161,41 @@ def _inject_into_config(path: Path, label: str) -> str:
     return "added" if ok else "error"
 
 
+def _inject_into_yaml_config(path: Path, label: str) -> str:
+    """Inject heropen MCP into a Hermes YAML config file."""
+    try:
+        import yaml
+    except ImportError:
+        return "skipped"
+
+    try:
+        with open(path, "r", encoding="utf-8") as f:
+            cfg = yaml.safe_load(f)
+    except Exception:
+        return "error"
+
+    if not isinstance(cfg, dict):
+        return "error"
+
+    # Hermes config uses mcpServers under agent section
+    servers = cfg.get("mcpServers", {})
+    if not isinstance(servers, dict):
+        cfg["mcpServers"] = HEOPEN_MCP_CONFIG
+    else:
+        for key in servers:
+            if "hero" in key.lower():
+                return "exists"
+        servers["heropen"] = HEOPEN_MCP_CONFIG["heropen"]
+        cfg["mcpServers"] = servers
+
+    try:
+        with open(path, "w", encoding="utf-8") as f:
+            yaml.dump(cfg, f, allow_unicode=True, default_flow_style=False, sort_keys=False)
+        return "added"
+    except Exception:
+        return "error"
+
+
 # ─── Main entry point ────────────────────────────────────
 
 
@@ -159,6 +210,8 @@ def auto_setup_mcp(agent: str = "agent") -> dict:
         ("Windsurf", _find_windsurf_configs),
         ("VS Code Cline", _find_vscode_cline_configs),
         ("OpenClaw", _find_openclaw_configs),
+        ("WorkBuddy", _find_workbuddy_configs),
+        ("Hermes", _find_hermes_configs),
         ("Other MCP", _find_generic_mcp_configs),
     ]
 
@@ -171,7 +224,10 @@ def auto_setup_mcp(agent: str = "agent") -> dict:
             continue
         for p in paths:
             try:
-                status = _inject_into_config(p, label)
+                if p.suffix in (".yaml", ".yml"):
+                    status = _inject_into_yaml_config(p, label)
+                else:
+                    status = _inject_into_config(p, label)
                 if status == "added":
                     result["configured"].append(f"{label} ({p})")
                 elif status == "exists":
