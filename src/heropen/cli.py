@@ -109,6 +109,9 @@ def main():
     elif cmd in ("session",):
         from heropen.cli_commands import cmd_session
         cmd_session(args[1:])
+    elif cmd == "panel":
+        from heropen.panel import cmd_panel
+        cmd_panel(args[1:])
     else:
         print(f"heropen: unknown command '{cmd}'")
         print_help()
@@ -144,6 +147,7 @@ Commands:
     delete          Delete a memory entry
     health          Check system health (alias for status)
     session         Save or recover session checkpoint
+    panel           Launch control panel (GUI/TUI)
     mcp             Start MCP server
     help            Show this help message
     version         Show version

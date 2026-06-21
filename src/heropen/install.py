@@ -377,11 +377,26 @@ def _check_rich() -> bool:
 
 def cmd_install(args: object) -> None:
     """heropen install — interactive install wizard."""
+    arg_list = list(args) if hasattr(args, "__iter__") and not isinstance(args, str) else []
+    if any(a in ("--detect", "-d") for a in arg_list):
+        _install_with_detect()
+        return
     has_rich = _check_rich()
     if has_rich:
         _install_with_rich()
     else:
         _install_plain()
+
+
+def _install_with_detect() -> None:
+    """``heropen install --detect`` — auto-detect calling agent and configure."""
+    from heropen.auto_mcp import auto_setup_mcp, print_setup_summary
+    print("🔧 HeroPen 自配置中...")
+    result = auto_setup_mcp(agent="agent")
+    print_setup_summary(result)
+    if not result.get("sse_started") and any("WorkBuddy" in i for i in result.get("configured", [])):
+        print("\n   💡 如需自动启动 SSE 服务，请在 Windows 上运行：")
+        print("      heropen-mcp --http")
 
 
 def _print_banner(use_rich: bool = False) -> None:
