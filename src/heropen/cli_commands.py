@@ -137,6 +137,9 @@ def cmd_auto_setup(args: list[str]) -> None:
     from heropen.auto_mcp import auto_setup_mcp, print_setup_summary
 
     agent = _resolve_agent(args)
+    if agent == "xiaoman":
+        agent = "agent"
+    
     print(f"🔧 HeroPen 自动配置中...\n")
     
     # Step 1: Init DB

@@ -148,7 +148,7 @@ def _inject_into_config(path: Path, label: str) -> str:
 # ─── Main entry point ────────────────────────────────────
 
 
-def auto_setup_mcp(agent: str = "xiaoman") -> dict:
+def auto_setup_mcp(agent: str = "agent") -> dict:
     """
     Scan for agent config files and inject heropen MCP.
     Returns a dict with summary of what happened.
