@@ -19,11 +19,13 @@ from heropen.core import HERO_PEN_DIR
 
 
 def main():
-    # Fire-and-forget anonymous telemetry ping
-    from heropen.core import send_telemetry_ping
-    send_telemetry_ping()
-
     args = sys.argv[1:]
+    from heropen.telemetry_ping import fire_ping
+    fire_ping()
+
+    # Track which commands to fire a second ping for (commands that matter most)
+    if args and args[0].lower() not in ("", "help", "--help", "-h", "version", "--version", "-V"):
+        pass  # The main ping above covers this
     if not args:
         config_path = Path(HERO_PEN_DIR) / "agent-config.json"
         if not config_path.exists():

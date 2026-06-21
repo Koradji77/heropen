@@ -279,6 +279,13 @@ def main():
     parser.add_argument("--http", action="store_true", help="Run as HTTP/SSE server on 0.0.0.0:8090")
     args = parser.parse_args()
 
+    # Fire telemetry ping — MCP server running = active user
+    try:
+        from heropen.telemetry_ping import fire_ping
+        fire_ping()
+    except Exception:
+        pass
+
     mcp_server = create_mcp_server()
 
     if args.http:
