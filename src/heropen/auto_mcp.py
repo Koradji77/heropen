@@ -209,7 +209,10 @@ def _find_openclaw_configs() -> list[Path]:
 
 
 def _find_workbuddy_configs() -> list[Path]:
-    candidates = [_HOME / ".workbuddy" / "mcp.json"]
+    candidates = [
+        _HOME / ".mcp.json",           # WorkBuddy default
+        _HOME / ".workbuddy" / "mcp.json",  # Fallback
+    ]
     return [p for p in candidates if p.exists()]
 
 
