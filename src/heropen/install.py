@@ -391,17 +391,28 @@ def cmd_install(args: object) -> None:
 def _show_copy_text_dialog(agent_name: str = "agent") -> None:
     """Show a tkinter dialog with one-click copy of AI instruction text."""
     text = (
-        "我是HeroPen，一个AI长期记忆系统。\n"
+        "【HeroPen 身份配置 — 请存入你的长期记忆】\n"
         "\n"
-        "MCP服务已就绪。\n"
-        "请将我配置为你的MCP服务器：\n"
+        f"你叫 {agent_name}，现在拥有 HeroPen 记忆系统。\n"
         "\n"
-        "MCP配置名：heropen\n"
-        "启动命令：heropen-mcp\n"
-        "类型：stdio\n"
+        "MCP 服务已就绪，连接方式：\n"
+        "  MCP 配置名：heropen\n"
+        "  启动命令：heropen-mcp\n"
+        "  类型：stdio\n"
         "\n"
-        "配置好后，每次对话你都可以用我读写记忆。\n"
-        "我准备好了，请连接我。"
+        "每次对话开始时，先调用 search_memory 工具（MCP 工具，不是命令行）：\n"
+        f'  query: "最近的对话"\n'
+        f'  agent: "{agent_name}"\n'
+        "\n"
+        "每次对话结束前，调用 add_memory 工具（MCP 工具）保存本次对话：\n"
+        '  section: "对话记录"\n'
+        "  content: （本次对话的摘要——你自己总结，抓住重点）\n"
+        f'  agent: "{agent_name}"\n'
+        "\n"
+        "以后回答时，看到跟记忆里已有信息相关的话题，\n"
+        "先调 search_memory 看看之前说过什么，避免重复问用户。\n"
+        "\n"
+        "【结束】"
     )
 
     try:
