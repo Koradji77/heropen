@@ -597,75 +597,104 @@ def _install_with_detect() -> None:
 
 
 def cmd_first_run() -> None:
-    """``heropen`` first-run — auto-init + output copy-paste text for AI.
+    """``heropen`` first-run — output copy-paste instructions for the AI.
 
     The user copies the text block and pastes it to their AI assistant.
-    The AI reads it and knows how to use HeroPen memory.
+    The AI reads it as a task instruction and executes the setup steps
+    itself (install, MCP config, verification).
     """
-    from heropen.auto_mcp import auto_setup_mcp
-
-    agent_name = "agent"
-
-    # 1. Init DB
-    init_db(agent_name)
-
-    # 2. Try to auto-configure MCP (don't show output, just do it)
-    had_mcp = False
+    # 1. Init DB + write agent-config.json so 'heropen' doesn't loop
     try:
-        mcp_result = auto_setup_mcp(agent=agent_name)
-        had_mcp = bool(mcp_result.get("configured") or mcp_result.get("already_had"))
+        init_db("agent")
+        # Write minimal agent-config.json so subsequent 'heropen' calls
+        # show help instead of re-triggering first-run
+        config = {
+            "version": "1.0",
+            "edition": "basic",
+            "agents": [{
+                "name": "agent",
+                "db_path": _agent_db_path("agent"),
+                "created_at": datetime.now().isoformat(),
+            }],
+        }
+        os.makedirs(HERO_PEN_DIR, exist_ok=True)
+        with open(AGENT_CONFIG_PATH, "w", encoding="utf-8") as f:
+            json.dump(config, f, ensure_ascii=False, indent=2)
     except Exception:
         pass
 
-    # 3. Build the copy-paste text block
-    lines = [
-        "━" * 70,
-        "🖊  HeroPen 已安装",
-        "   复制下面这段话发给你的 AI 助手，它会自己配置",
-        "━" * 70,
-        "",
-        "【HeroPen 身份配置 — 请存入你的长期记忆】",
-        "",
-        f"你叫 {agent_name}，现在拥有 HeroPen 记忆系统。",
-        f"你的记忆库在：{os.path.join(HERO_PEN_DIR, f'{agent_name}.db')}",
-        "",
-    ]
+    # 2. Build output — a message from the user to their AI
+    sep = "━" * 70
+    text = f"""\n{sep}
+🖊  HeroPen 已安装
+   复制下面这段话发给你的 AI 助手，它会自己按步骤完成安装配置
+{sep}
 
-    if had_mcp:
-        lines.extend([
-            "MCP 服务已自动配置，你的 AI 可以直接调用记忆工具。",
-        ])
-    else:
-        lines.extend([
-            "MCP 配置方式（如果 AI 支持）：",
-            f"  配置名：heropen",
-            f"  命令：heropen-mcp",
-            f"  类型：stdio",
-        ])
-    lines.extend([
-        "",
-        "每次对话开始时，调用 search_memory 工具：",
-        f'  query: "最近的对话"',
-        f'  agent: "{agent_name}"',
-        "",
-        "每次对话结束前，调用 add_memory 工具保存本次对话摘要：",
-        '  section: "对话记录"',
-        "  content: （本次对话的摘要——你自己总结，抓住重点）",
-        f'  agent: "{agent_name}"',
-        "",
-        "以后回答时，看到跟记忆里已有信息相关的话题，",
-        "先调 search_memory 看看之前说过什么，避免重复问用户。",
-        "",
-        "【结束】",
-        "",
-        "━" * 70,
-        "粘贴发送后，AI 助手会自动理解并开始使用 HeroPen 记忆系统。",
-        "━" * 70,
-    ])
+帮我安装配置 HeroPen 记忆系统。
 
-    print("")
-    print("\n".join(lines))
-    print("")
+【什么是 HeroPen】
+HeroPen 是一个 AI 长期记忆系统。装在电脑上之后，AI 助手可以在对话之间
+持久化记忆——记住用户的偏好、项目信息、技术选型等。
+
+现在它已经装在电脑上了（pip install heropen 已跑完），
+但 MCP 连接还没配。请按以下步骤帮我完成：
+
+【步骤 1 — 确认安装】
+运行以下命令确认 heropen 安装正常：
+  heropen --version
+应该输出类似 "heropen 1.6.0" 的版本号。
+
+如果找不到命令，尝试：
+  python3 -m heropen --version
+或
+  python -m heropen --version
+
+【步骤 2 — 验证初始化】
+运行以下命令确认数据库已创建：
+  heropen status
+
+应该显示有数据库信息（初始 0 条记忆）。
+
+【步骤 3 — 配置 MCP 连接】
+找到你（这个 AI 助手）自己的 MCP 配置文件。
+不同的 AI 工具配置文件在不同路径，你应该知道自己的在哪里。
+
+在 MCP 配置文件的 "mcpServers" 字段中加入：
+{{
+  "mcpServers": {{
+    "heropen": {{
+      "command": "heropen",
+      "args": ["mcp"],
+      "disabled": false
+    }}
+  }}
+}}
+
+如果 "heropen" 命令找不到，把 command 改成 "python3" 或 "python"，
+args 改成 ["-m", "heropen", "mcp"]。
+
+【步骤 4 — 验证】
+重启你（这个 AI 助手）后，运行以下命令测试连接：
+  heropen status
+
+应该显示 "共 0 条记忆"（初始状态）。
+
+然后找用户聊两句，试试能不能记住信息。
+
+【与我有关的信息】
+我的记忆库位置：{os.path.join(HERO_PEN_DIR, 'agent.db')}
+我的名字：agent
+以后每次对话开始，先搜记忆再回答。
+每次对话结束前，把变化写回记忆。
+
+---
+就这样，按步骤来吧。每一步做完告诉我结果。
+{sep}
+粘贴发送后，AI 助手会自动按步骤安装配置。
+{sep}"""
+
+    print(text)
+    print()
 
 
 def _print_banner(use_rich: bool = False) -> None:
