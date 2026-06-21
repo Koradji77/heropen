@@ -1,0 +1,613 @@
+"""
+heropen.install — Interactive install wizard for HeroPen.
+
+Usage (CLI):
+    heropen install
+
+Phase 1: rich-powered terminal UI.
+Phase 2 (TODO): --ui flag for local web page.
+"""
+
+from __future__ import annotations
+
+import json
+import os
+import re
+import sys
+from dataclasses import dataclass, field
+from datetime import datetime
+from pathlib import Path
+from typing import Optional
+
+from heropen.core import HERO_PEN_DIR, AGENTS, init_db
+
+# ─── Constants ─────────────────────────────────────────────────
+
+AGENT_CONFIG_PATH = os.path.join(HERO_PEN_DIR, "agent-config.json")
+from heropen.core import FREE_AGENT_LIMIT as MAX_AGENTS_BASIC
+MAX_AGENTS_PLUS = 5
+
+INVALID_NAME_RE = re.compile(r'[/\\]')
+
+
+# ─── Data model ────────────────────────────────────────────────
+
+@dataclass
+class DiscoveredAgent:
+    """An agent found on the user's machine via MCP config scanning."""
+    name: str
+    source: str  # e.g. "Claude Desktop", "Cursor", "Hermes", "manual"
+
+
+@dataclass
+class AgentConfig:
+    """A configured agent with its own memory database."""
+    name: str
+    db_path: str
+    created_at: str
+
+
+@dataclass
+class InstallConfig:
+    """The entire install configuration saved to disk."""
+    version: str = "1.0"
+    edition: str = "basic"   # "basic" or "plus"
+    agents: list[dict] = field(default_factory=list)
+
+
+# ─── Agent scanning ───────────────────────────────────────────
+
+_HOME = Path.home()
+
+
+def _read_json_safe(path: Path) -> Optional[dict]:
+    """Read a JSON file, return None on failure."""
+    try:
+        if path.exists():
+            with open(path, "r", encoding="utf-8") as f:
+                return json.load(f)
+    except (json.JSONDecodeError, OSError):
+        pass
+    return None
+
+
+def _scan_claude() -> list[DiscoveredAgent]:
+    """Scan Claude Desktop's MCP config for hero-pen entries."""
+    agents: list[DiscoveredAgent] = []
+    candidates = [
+        # Old Claude Desktop
+        _HOME / "Library" / "Application Support" / "Claude" / "claude_desktop_config.json",
+        # New Claude Desktop (2024+)
+        _HOME / "Library" / "Application Support" / "Claude" / "claude.json",
+    ]
+    if sys.platform == "win32":
+        appdata = os.environ.get("APPDATA", "")
+        candidates.extend([
+            Path(appdata) / "Claude" / "claude_desktop_config.json",
+            Path(appdata) / "Claude" / "claude.json",
+        ])
+    if sys.platform == "darwin":
+        # Also check ~/.config/claude/ on macOS (some distributions)
+        candidates.append(_HOME / ".config" / "claude" / "claude_desktop_config.json")
+
+    for path in candidates:
+        cfg = _read_json_safe(path)
+        if not cfg:
+            continue
+        mcp_servers = cfg.get("mcpServers", cfg.get("mcp_servers", {}))
+        if not isinstance(mcp_servers, dict):
+            continue
+        for server_name, server_cfg in mcp_servers.items():
+            if not isinstance(server_cfg, dict):
+                continue
+            combined = (server_name + str(server_cfg)).lower()
+            if "hero" in combined:
+                env = server_cfg.get("env", {})
+                agent_name = env.get("AGENT", env.get("agent", ""))
+                if not agent_name:
+                    agent_name = server_name
+                agents.append(DiscoveredAgent(name=agent_name, source="Claude Desktop"))
+    return agents
+
+
+def _scan_cursor() -> list[DiscoveredAgent]:
+    """Scan Cursor's MCP config files."""
+    agents: list[DiscoveredAgent] = []
+    candidates = [
+        _HOME / ".cursor" / "mcp.json",
+        # Project-level configs (scan cwd and common project dirs)
+    ]
+    # Also scan workspace dirs if we can detect them
+    for path in candidates:
+        cfg = _read_json_safe(path)
+        if not cfg:
+            continue
+        mcp_servers = cfg.get("mcpServers", {})
+        if not isinstance(mcp_servers, dict):
+            continue
+        for server_name, server_cfg in mcp_servers.items():
+            if not isinstance(server_cfg, dict):
+                continue
+            combined = (server_name + str(server_cfg)).lower()
+            if "hero" in combined:
+                env = server_cfg.get("env", {})
+                agent_name = env.get("AGENT", env.get("agent", server_name))
+                agents.append(DiscoveredAgent(
+                    name=agent_name,
+                    source="Cursor",
+                ))
+    return agents
+
+
+def _scan_workbuddy() -> list[DiscoveredAgent]:
+    """Scan WorkBuddy MCP config."""
+    agents: list[DiscoveredAgent] = []
+    path = _HOME / ".workbuddy" / "mcp.json"
+    cfg = _read_json_safe(path)
+    if not cfg:
+        return agents
+    mcp_servers = cfg.get("mcpServers", cfg.get("mcp_servers", {}))
+    if not isinstance(mcp_servers, dict):
+        return agents
+    for server_name, srv in mcp_servers.items():
+        if not isinstance(srv, dict):
+            continue
+        combined = (server_name + str(srv)).lower()
+        if "hero" in combined:
+            env = srv.get("env", {})
+            agent_name = env.get("AGENT", env.get("agent", server_name))
+            agents.append(DiscoveredAgent(name=agent_name, source="WorkBuddy"))
+    return agents
+
+
+def _scan_hermes() -> list[DiscoveredAgent]:
+    """Scan Hermes profiles for agent names."""
+    agents: list[DiscoveredAgent] = []
+    hermes_home = Path(os.environ.get("HERMES_HOME", str(_HOME / ".hermes")))
+    profiles_dir = Path(hermes_home) / "profiles"
+    if profiles_dir.is_dir():
+        for entry in sorted(profiles_dir.iterdir()):
+            if entry.is_dir() and not entry.name.startswith("."):
+                agents.append(DiscoveredAgent(name=entry.name, source="Hermes"))
+    # Also scan ~/.hermes/scripts/ for agent-named scripts
+    scripts_dir = Path(hermes_home) / "scripts"
+    if scripts_dir.is_dir():
+        for entry in sorted(scripts_dir.iterdir()):
+            if entry.is_file() and not entry.name.startswith("."):
+                name = entry.stem  # filename without extension
+                if name not in [a.name for a in agents]:
+                    agents.append(DiscoveredAgent(name=name, source="Hermes (scripts)"))
+    return agents
+
+
+def _scan_other_mcp() -> list[DiscoveredAgent]:
+    """Scan ~/.config/*/mcp.json and Windows equivalent for hero-pen references."""
+    agents: list[DiscoveredAgent] = []
+    # Linux / macOS
+    config_dir = _HOME / ".config"
+    if config_dir.is_dir():
+        for mcp_path in config_dir.rglob("mcp.json"):
+            _scan_mcp_file(mcp_path, agents, f"other ({mcp_path.parent.name})")
+    # Windows: check APPDATA and LOCALAPPDATA
+    if sys.platform == "win32":
+        for env_var in ("APPDATA", "LOCALAPPDATA"):
+            base = os.environ.get(env_var, "")
+            if base:
+                for mcp_path in Path(base).rglob("mcp.json"):
+                    _scan_mcp_file(mcp_path, agents, f"other (Windows {env_var})")
+    return agents
+
+
+def _scan_mcp_file(path: Path, agents: list[DiscoveredAgent], source_label: str) -> None:
+    """Helper: scan a single mcp.json file for heropen references."""
+    cfg = _read_json_safe(path)
+    if not cfg:
+        return
+    servers = cfg.get("mcpServers", cfg.get("mcp_servers", {}))
+    if not isinstance(servers, dict):
+        return
+    for server_name, srv in servers.items():
+        if not isinstance(srv, dict):
+            continue
+        combined = (server_name + str(srv)).lower()
+        if "hero" in combined:
+            env = srv.get("env", {})
+            agent_name = env.get("AGENT", env.get("agent", server_name))
+            # Avoid duplicates
+            if not any(a.name == agent_name for a in agents):
+                agents.append(DiscoveredAgent(
+                    name=agent_name,
+                    source=source_label,
+                ))
+
+
+def scan_agents() -> list[DiscoveredAgent]:
+    """Run all scanners, deduplicate by name, return ordered list."""
+    seen: set[str] = set()
+    result: list[DiscoveredAgent] = []
+
+    scanners = [
+        ("Claude Desktop", _scan_claude),
+        ("Cursor", _scan_cursor),
+        ("WorkBuddy", _scan_workbuddy),
+        ("Hermes", _scan_hermes),
+        ("Other MCP", _scan_other_mcp),
+    ]
+
+    for source_name, scanner in scanners:
+        try:
+            for agent in scanner():
+                if agent.name not in seen:
+                    seen.add(agent.name)
+                    result.append(agent)
+        except Exception:
+            # Don't let one scanner crash the whole scan
+            pass
+
+    return result
+
+
+# ─── Input validation ─────────────────────────────────────────
+
+def _validate_agent_name(name: str) -> tuple[bool, str]:
+    """Validate an agent name. Returns (ok, error_msg)."""
+    name = name.strip()
+    if not name:
+        return False, "名称不能为空"
+    if INVALID_NAME_RE.search(name):
+        return False, "名称不能包含 / 或 \\"
+    if len(name) > 50:
+        return False, "名称不能超过 50 个字符"
+    return True, ""
+
+
+# ─── Config generation ────────────────────────────────────────
+
+def _agent_db_path(agent_name: str) -> str:
+    """Get the db path for a given agent name."""
+    safe_name = re.sub(r'[^a-zA-Z0-9_-]', '_', agent_name)
+    return os.path.join(HERO_PEN_DIR, f"{safe_name}.db")
+
+
+def _build_agent_config(name: str, edition: str) -> dict:
+    return {
+        "name": name,
+        "db_path": _agent_db_path(name),
+        "created_at": datetime.now().isoformat(),
+    }
+
+
+def _build_identity_text(agent_cfg: dict, edition: str, total_agents: int) -> str:
+    """Build the 'copy config' text for one agent — talks to the agent itself."""
+    name = agent_cfg["name"]
+    lines = [
+        "【HeroPen 身份配置 — 请存入你的长期记忆】",
+        "",
+        f"你叫 {name}，现在拥有 HeroPen 记忆系统。",
+        f"你的记忆库在：{agent_cfg['db_path']}",
+        "",
+        "每次对话开始时，先调用 search_memory 工具（MCP 工具，不是命令行）：",
+        f'  query: "最近的对话"',
+        f'  agent: "{name}"',
+        "",
+        "如果返回结果里出现「⏰ 距离上次对话已过 X 小时」，",
+        "说明对话间隔太久——主动问问用户最近发生了什么，要不要回顾。",
+        "",
+        "每次对话结束前，调用 add_memory 工具（MCP 工具）：",
+        '  section: "对话记录"',
+        "  content: （本次对话的摘要——你自己总结，抓住重点）",
+        f'  agent: "{name}"',
+        "",
+        "以后回答时，看到跟记忆里已有信息相关的话题，",
+        "先调 search_memory 看看之前说过什么，避免重复问用户。",
+    ]
+
+    if edition == "plus" and total_agents > 1:
+        lines.extend([
+            "",
+            "（你还可以问用户「有没有共享记忆服务地址」，",
+            "有的话填上，就可以跟其他助手互相检索记忆了。）",
+        ])
+
+    lines.extend([
+        "",
+        "【结束】",
+    ])
+    return "\n".join(lines)
+
+
+def generate_config(selected_names: list[str], edition: str) -> InstallConfig:
+    """Initialize DBs for each selected agent and save agent-config.json."""
+    os.makedirs(HERO_PEN_DIR, exist_ok=True)
+
+    config = InstallConfig(version="1.0", edition=edition)
+    for name in selected_names:
+        # Register in the internal AGENTS dict and init DB
+        init_db(name)
+        agent_cfg = _build_agent_config(name, edition)
+        config.agents.append(agent_cfg)
+
+    # Save agent-config.json
+    with open(AGENT_CONFIG_PATH, "w", encoding="utf-8") as f:
+        json.dump({
+            "version": config.version,
+            "edition": config.edition,
+            "agents": config.agents,
+        }, f, ensure_ascii=False, indent=2)
+
+    return config
+
+
+def _config_exists() -> bool:
+    """Check if agent-config.json already exists."""
+    return os.path.exists(AGENT_CONFIG_PATH)
+
+
+def _confirm_overwrite() -> bool:
+    """Ask user to confirm overwriting existing config. Returns True if OK to overwrite."""
+    if not _config_exists():
+        return True
+    try:
+        ans = input("⚠️  检测到已有配置，覆盖？[y/N]: ").strip().lower()
+        return ans in ("y", "yes")
+    except (EOFError, KeyboardInterrupt):
+        return False
+
+
+# ─── CLI interaction (Phase 1 — rich-powered) ───────────────
+
+def _check_rich() -> bool:
+    """Check if rich is available."""
+    try:
+        import rich  # noqa: F401
+        return True
+    except ImportError:
+        return False
+
+
+def cmd_install(args: object) -> None:
+    """heropen install — interactive install wizard."""
+    has_rich = _check_rich()
+    if has_rich:
+        _install_with_rich()
+    else:
+        _install_plain()
+
+
+def _print_banner(use_rich: bool = False) -> None:
+    """Print the HeroPen install banner."""
+    if use_rich:
+        from rich.console import Console
+        from rich.panel import Panel
+        console = Console()
+        console.print(Panel(
+            "[bold cyan]🖊  HeroPen 安装配置向导[/bold cyan]\n"
+            "[dim]让 AI 助手拥有长期记忆[/dim]",
+            border_style="cyan",
+        ))
+    else:
+        print()
+        print("  🖊  HeroPen 安装配置向导")
+        print("  ══════════════════════════════════════")
+        print()
+
+
+def _install_plain() -> None:
+    """Fallback install wizard without rich."""
+    _print_banner(use_rich=False)
+
+    # Check for existing config
+    if _config_exists():
+        print("⚠️  检测到已有配置：")
+        try:
+            with open(AGENT_CONFIG_PATH, "r", encoding="utf-8") as f:
+                existing = json.load(f)
+            for a in existing.get("agents", []):
+                print(f"     - {a['name']} ({a.get('edition', 'basic')} 版)")
+        except Exception:
+            pass
+        if not _confirm_overwrite():
+            print("已取消。")
+            return
+
+    # Step 1: Scan
+    print("🔍 正在扫描本机 AI 助手...")
+    found = scan_agents()
+
+    if found:
+        print(f"\n✅ 发现了 {len(found)} 个 AI 助手：")
+        for i, a in enumerate(found, 1):
+            print(f"    {i}. {a.name}  (来自 {a.source})")
+    else:
+        print("\n⚠️  没有自动扫描到 AI 助手。")
+        print("   请手动输入助手名称。")
+
+    # Step 2: Manual input / confirm list
+    selected_names: list[str] = []
+    if found:
+        print("\n请输入要配置的助手编号（用逗号分隔，如 1,2），或直接回车全选：")
+        raw = input("> ").strip()
+        if raw:
+            try:
+                indices = [int(x.strip()) for x in raw.split(",") if x.strip()]
+                selected_names = [found[i - 1].name for i in indices if 1 <= i <= len(found)]
+            except (ValueError, IndexError):
+                print("❌ 输入有误，默认全选。")
+                selected_names = [a.name for a in found]
+        else:
+            selected_names = [a.name for a in found]
+    else:
+        print("\n请输入你的 AI 助手名字（多个用逗号分隔）：")
+        raw = input("> ").strip()
+        if raw:
+            selected_names = [x.strip() for x in raw.split(",") if x.strip()]
+        else:
+            print("❌ 至少需要一个助手名字。")
+            return
+
+    # Validate names
+    valid_names: list[str] = []
+    for name in selected_names:
+        ok, msg = _validate_agent_name(name)
+        if ok:
+            valid_names.append(name)
+        else:
+            print(f"⚠️  跳过「{name}」：{msg}")
+    if not valid_names:
+        print("❌ 没有有效的助手名字。")
+        return
+    selected_names = valid_names
+
+    # Step 3: Edition
+    print("\n请选择版型：")
+    print(f"  [1] Basic — 给 {MAX_AGENTS_BASIC} 个助手使用（免费）")
+    print(f"  [2] Plus  — 最多给 {MAX_AGENTS_PLUS} 个助手使用（订阅）")
+    edition_raw = input("> ").strip()
+    if edition_raw == "2":
+        edition = "plus"
+        max_agents = MAX_AGENTS_PLUS
+    else:
+        edition = "basic"
+        max_agents = MAX_AGENTS_BASIC
+
+    if len(selected_names) > max_agents:
+        print(f"\n⚠️  {edition} 版最多支持 {max_agents} 个助手，已自动截断。")
+        selected_names = selected_names[:max_agents]
+
+    # Step 4: Generate
+    print(f"\n⚙️  正在为 {len(selected_names)} 个助手生成配置...")
+
+    config = generate_config(selected_names, edition)
+
+    print(f"\n✅ 配置完成！配置文件已保存到：{AGENT_CONFIG_PATH}")
+    print(f"\n{'═' * 55}")
+    print("  请将以下配置分别发给对应的 AI 助手")
+    print(f"{'═' * 55}\n")
+
+    for i, agent_cfg in enumerate(config.agents, 1):
+        text = _build_identity_text(agent_cfg, edition, len(config.agents))
+        print(f"─── [{i}] {agent_cfg['name']} {'─' * (50 - len(agent_cfg['name']) - 7)}")
+        print(f"\n{text}\n")
+
+    print(f"{'═' * 55}")
+    print("  助手收到后把那段文字存进长期记忆即可。")
+    print("  以后它每次对话都知道自己有 HeroPen 记忆系统了。")
+    print(f"{'═' * 55}\n")
+
+
+def _install_with_rich() -> None:
+    """Install wizard with rich — colors, boxes, checkboxes."""
+    from rich.console import Console
+    from rich.panel import Panel
+    from rich.prompt import Prompt
+    from rich.table import Table
+    from rich.text import Text
+    import rich.box
+
+    console = Console()
+
+    # Check for existing config
+    if _config_exists():
+        console.print("\n[yellow]⚠️  检测到已有配置。[/yellow]")
+        try:
+            with open(AGENT_CONFIG_PATH, "r", encoding="utf-8") as f:
+                existing = json.load(f)
+            for a in existing.get("agents", []):
+                console.print(f"     - {a['name']} ([dim]{a.get('edition', 'basic')} 版[/dim])")
+        except Exception:
+            pass
+        if not _confirm_overwrite():
+            console.print("[dim]已取消。[/dim]")
+            return
+
+    _print_banner(use_rich=True)
+
+    # Step 1: Scan
+    with console.status("[bold]🔍 正在扫描本机 AI 助手...[/bold]", spinner="dots"):
+        found = scan_agents()
+
+    if found:
+        table = Table(title="✅ 发现了以下 AI 助手", box=rich.box.ROUNDED)
+        table.add_column("#", style="cyan", width=4)
+        table.add_column("助手名称", style="bold green")
+        table.add_column("来源", style="blue")
+        for i, a in enumerate(found, 1):
+            table.add_row(str(i), a.name, a.source)
+        console.print(table)
+    else:
+        console.print("\n[yellow]⚠️  没有自动扫描到 AI 助手。[/yellow]")
+        console.print("  请手动输入助手名称。")
+
+    # Step 2: Select agents
+    selected_names: list[str] = []
+    if found:
+        console.print("\n请输入要配置的助手编号（用逗号分隔，如 [bold]1,2[/bold]），或直接回车全选：")
+        raw = Prompt.ask(">", default="")
+        if raw:
+            try:
+                indices = [int(x.strip()) for x in raw.split(",") if x.strip()]
+                selected_names = [found[i - 1].name for i in indices if 1 <= i <= len(found)]
+            except (ValueError, IndexError):
+                console.print("[red]❌ 输入有误，默认全选。[/red]")
+                selected_names = [a.name for a in found]
+        else:
+            selected_names = [a.name for a in found]
+    else:
+        console.print("\n请输入你的 AI 助手名字（多个用逗号分隔）：")
+        raw = Prompt.ask(">", default="")
+        if raw:
+            selected_names = [x.strip() for x in raw.split(",") if x.strip()]
+        if not selected_names:
+            console.print("[red]❌ 至少需要一个助手名字。[/red]")
+            return
+
+    # Validate names
+    valid_names: list[str] = []
+    for name in selected_names:
+        ok, msg = _validate_agent_name(name)
+        if ok:
+            valid_names.append(name)
+        else:
+            console.print(f"[yellow]⚠️  跳过「{name}」：{msg}[/yellow]")
+    if not valid_names:
+        console.print("[red]❌ 没有有效的助手名字。[/red]")
+        return
+    selected_names = valid_names
+
+    # Step 3: Edition
+    console.print("\n请选择版型：")
+    console.print(f"  [1] [bold]Basic[/bold] — 给 {MAX_AGENTS_BASIC} 个助手使用（免费）")
+    console.print(f"  [2] [bold]Plus[/bold]  — 最多给 {MAX_AGENTS_PLUS} 个助手使用（订阅）")
+    edition_raw = Prompt.ask(">", default="1")
+    if edition_raw == "2":
+        edition = "plus"
+        max_agents = MAX_AGENTS_PLUS
+    else:
+        edition = "basic"
+        max_agents = MAX_AGENTS_BASIC
+
+    if len(selected_names) > max_agents:
+        console.print(f"\n[yellow]⚠️  {edition} 版最多支持 {max_agents} 个助手，已自动截断。[/yellow]")
+        selected_names = selected_names[:max_agents]
+
+    # Step 4: Generate
+    with console.status("[bold]⚙️  正在生成配置...[/bold]", spinner="dots"):
+        config = generate_config(selected_names, edition)
+
+    console.print(f"\n[green]✅ 配置完成！[/green] 配置文件：{AGENT_CONFIG_PATH}")
+
+    # Step 5: Show identity texts
+    console.rule("[bold]请将以下配置分别发给对应的 AI 助手[/bold]")
+
+    for i, agent_cfg in enumerate(config.agents, 1):
+        text = _build_identity_text(agent_cfg, edition, len(config.agents))
+        panel = Panel(
+            text,
+            title=f"[bold cyan]{i}. {agent_cfg['name']}[/bold cyan]",
+            border_style="green",
+            box=rich.box.ROUNDED,
+        )
+        console.print(panel)
+
+    console.rule("[bold]✓ 配置完成[/bold]")
+    console.print("[dim]助手收到后把那段文字存进长期记忆即可。[/dim]")
