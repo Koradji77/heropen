@@ -318,8 +318,13 @@ def auto_setup_mcp(agent: str = "agent") -> dict:
         ("Hermes", _find_hermes_configs),
         ("Other MCP", _find_generic_mcp_configs),
     ]
-    result = {"configured": [], "already_had": [], "errors": [],
-              "sse_started": False, "scheduler_registered": False}
+    result = {
+        "configured": [],
+        "already_had": [],
+        "errors": [],
+        "sse_started": False,
+        "scheduler_registered": False,
+    }
     for label, scanner in scanners:
         try:
             paths = scanner()
