@@ -38,8 +38,8 @@ def _write_json_safe(path: Path, data: dict) -> bool:
 
 HEOPEN_MCP_CONFIG = {
     "heropen": {
-        "command": "heropen",
-        "args": ["mcp"],
+        "command": "heropen-mcp",
+        "args": [],
     }
 }
 
