@@ -596,7 +596,27 @@ def _install_with_rich() -> None:
 
     console.print(f"\n[green]✅ 配置完成！[/green] 配置文件：{AGENT_CONFIG_PATH}")
 
-    # Step 5: Show identity texts
+    # Step 5: Auto-configure MCP
+    try:
+        from heropen.auto_mcp import auto_setup_mcp
+        mcp_result = auto_setup_mcp()
+        if mcp_result["configured"] or mcp_result["already_had"]:
+            mcp_lines = []
+            for item in mcp_result["configured"]:
+                mode = "SSE" if "WorkBuddy" in item else "stdio"
+                mcp_lines.append(f"[green]  + {item} [{mode}][/green]")
+            for item in mcp_result["already_had"]:
+                mcp_lines.append(f"[dim]  . {item} (already configured)[/dim]")
+            if mcp_lines:
+                from rich.panel import Panel
+                console.print(Panel("\n".join(mcp_lines), title="MCP Auto-Configured", border_style="green"))
+        if mcp_result.get("sse_started"):
+            console.print("[green]WorkBuddy SSE server started[/green]")
+        if mcp_result.get("scheduler_registered"):
+            console.print("[green]Auto-start registered for next login[/green]")
+    except Exception:
+        pass
+    # Step 6: Show identity texts
     console.rule("[bold]请将以下配置分别发给对应的 AI 助手[/bold]")
 
     for i, agent_cfg in enumerate(config.agents, 1):
