@@ -383,6 +383,6 @@ def print_setup_summary(result: dict) -> None:
     has_wb = any("WorkBuddy" in item for item in result["configured"] + result["already_had"])
     if has_wb:
         print("\n\U0001f4cc WorkBuddy uses SSE mode - the background service must stay running.")
-        if not result.get("sse_started"):
+        if not result.get("sse_started") and not _is_sse_server_running():
             print("   If connection fails, start manually:")
             print("   heropen-mcp --http")
