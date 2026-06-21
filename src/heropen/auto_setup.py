@@ -43,6 +43,7 @@ def run() -> None:
     """Run auto-setup if this is the first interpreter start after install."""
     if not _should_run():
         return
+    print("\n🖊  HeroPen 已安装！重启你的 AI 助手即可完成配置。\n", flush=True)
     try:
         from heropen.install import _install_with_detect as detect
         detect()
