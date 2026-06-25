@@ -1,0 +1,771 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Hero Pen · Agent记忆系统</title>
+<style>
+  :root {
+    --bg: #0a0a0f;
+    --card-bg: #111118;
+    --card-hover: #161622;
+    --border: #1e1e2e;
+    --text: #c8c8d4;
+    --text-dim: #666680;
+    --accent: #7c5cfc;
+    --accent-glow: rgba(124, 92, 252, 0.15);
+    --green: #4ade80;
+    --green-bg: rgba(74, 222, 128, 0.08);
+    --grey-bg: rgba(102, 102, 128, 0.08);
+    --grey-text: #555566;
+    --radius: 12px;
+    --font: -apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang SC", "Microsoft YaHei", sans-serif;
+    --mono: "SF Mono", "Cascadia Code", "Consolas", monospace;
+  }
+
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+
+  body {
+    font-family: var(--font);
+    background: var(--bg);
+    color: var(--text);
+    min-height: 100vh;
+    display: flex;
+    justify-content: center;
+    padding: 24px 16px;
+    -webkit-font-smoothing: antialiased;
+  }
+
+  .container {
+    width: 100%;
+    max-width: 680px;
+  }
+
+  /* ── Header ── */
+  .header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    margin-bottom: 16px;
+  }
+  .brand {
+    font-size: 18px;
+    font-weight: 600;
+    color: #e0e0f0;
+    letter-spacing: -0.3px;
+  }
+  .brand span { color: var(--accent); }
+  .tagline {
+    font-size: 11px;
+    font-weight: 400;
+    color: var(--text-dim);
+    margin-left: 6px;
+  }
+  .version {
+    font-size: 11px;
+    font-family: var(--mono);
+    color: var(--grey-text);
+    background: var(--grey-bg);
+    padding: 3px 8px;
+    border-radius: 6px;
+  }
+  .version.update {
+    color: var(--accent);
+    background: rgba(124, 92, 252, 0.1);
+    border: 1px solid rgba(124, 92, 252, 0.2);
+    cursor: pointer;
+    text-decoration: none;
+    transition: all 0.2s;
+  }
+  .version.update:hover {
+    background: rgba(124, 92, 252, 0.18);
+  }
+
+  /* ── Level Bar ── */
+  .level-row {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    margin-bottom: 12px;
+    opacity: 0.35;
+    pointer-events: none;
+    user-select: none;
+  }
+  .lv-label {
+    font-size: 12px;
+    font-weight: 600;
+    color: var(--grey-text);
+    letter-spacing: 0.5px;
+    min-width: 72px;
+  }
+  .lv-bar-wrap {
+    flex: 1;
+    height: 6px;
+    background: rgba(255,255,255,0.04);
+    border-radius: 3px;
+    overflow: hidden;
+  }
+  .lv-bar-fill {
+    height: 100%;
+    width: 20%;
+    background: linear-gradient(90deg, #444, #555);
+    border-radius: 3px;
+  }
+  .lv-hongbao {
+    font-size: 11px;
+    color: var(--grey-text);
+    background: var(--grey-bg);
+    padding: 3px 10px;
+    border-radius: 6px;
+    white-space: nowrap;
+  }
+
+  /* ── Action Row ── */
+  .action-row {
+    display: flex;
+    gap: 10px;
+    margin-bottom: 20px;
+  }
+  .btn {
+    font-size: 12px;
+    font-weight: 500;
+    padding: 7px 16px;
+    border-radius: 8px;
+    border: 1px solid transparent;
+    cursor: pointer;
+    transition: all 0.2s;
+    font-family: var(--font);
+    text-decoration: none;
+    display: inline-block;
+    text-align: center;
+  }
+  .btn-grey {
+    color: var(--grey-text);
+    background: var(--grey-bg);
+    border-color: transparent;
+    pointer-events: none;
+    user-select: none;
+  }
+  .btn-bright {
+    color: #c8b8ff;
+    background: rgba(124, 92, 252, 0.08);
+    border-color: rgba(124, 92, 252, 0.2);
+  }
+  .btn-bright:hover {
+    background: rgba(124, 92, 252, 0.15);
+    border-color: rgba(124, 92, 252, 0.35);
+  }
+
+  /* ── Agent Cards ── */
+  .cards {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 12px;
+  }
+  .card {
+    background: var(--card-bg);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    padding: 16px;
+    cursor: pointer;
+    transition: all 0.2s;
+    position: relative;
+  }
+  .card:hover {
+    background: var(--card-hover);
+    border-color: rgba(124, 92, 252, 0.25);
+  }
+  .card.expanded {
+    border-color: rgba(124, 92, 252, 0.35);
+    box-shadow: 0 0 20px var(--accent-glow);
+  }
+  .card-agent {
+    font-size: 14px;
+    font-weight: 600;
+    color: #d8d8e8;
+    margin-bottom: 4px;
+  }
+  .card-platform {
+    font-size: 11px;
+    color: var(--text-dim);
+    margin-bottom: 8px;
+  }
+  .card-status {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    font-size: 11px;
+    color: var(--green);
+    margin-bottom: 4px;
+  }
+  .card-status.offline {
+    color: #ef4444;
+  }
+  .card-dot {
+    width: 6px;
+    height: 6px;
+    border-radius: 50%;
+    background: var(--green);
+    box-shadow: 0 0 6px rgba(74, 222, 128, 0.5);
+  }
+  .card-dot.offline {
+    background: #ef4444;
+    box-shadow: 0 0 6px rgba(239, 68, 68, 0.4);
+  }
+  .card-today {
+    font-size: 12px;
+    color: var(--text-dim);
+  }
+  .card-today strong {
+    color: var(--text);
+    font-weight: 600;
+  }
+
+  /* ── Expand Panel ── */
+  .expand {
+    display: none;
+    margin-top: 12px;
+    padding-top: 12px;
+    border-top: 1px solid var(--border);
+    max-height: 320px;
+    overflow-y: auto;
+  }
+  .card.expanded .expand { display: block; }
+
+  .timeline-item {
+    padding: 8px 0;
+    border-bottom: 1px solid rgba(255,255,255,0.03);
+    font-size: 12px;
+    line-height: 1.5;
+  }
+  .timeline-item:last-child { border-bottom: none; }
+  .timeline-date {
+    font-size: 10px;
+    color: var(--text-dim);
+    margin-bottom: 3px;
+    font-family: var(--mono);
+  }
+  .timeline-section {
+    color: var(--accent);
+    font-weight: 500;
+    font-size: 11px;
+  }
+  .timeline-content {
+    color: #999;
+    font-size: 11px;
+    margin-top: 2px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    display: -webkit-box;
+    -webkit-line-clamp: 2;
+    -webkit-box-orient: vertical;
+  }
+
+  .loading-text {
+    font-size: 11px;
+    color: var(--text-dim);
+    text-align: center;
+    padding: 12px 0;
+  }
+  .expand-hint {
+    text-align: center;
+    font-size: 10px;
+    color: var(--grey-text);
+    padding: 10px 0 4px;
+    border-top: 1px solid rgba(255,255,255,0.03);
+    margin-top: 4px;
+  }
+
+  /* ── Scrollbar ── */
+  .expand::-webkit-scrollbar { width: 4px; }
+  .expand::-webkit-scrollbar-track { background: transparent; }
+  .expand::-webkit-scrollbar-thumb { background: rgba(255,255,255,0.06); border-radius: 2px; }
+
+  /* ── states ── */
+  .state-msg {
+    text-align: center;
+    padding: 60px 20px;
+    color: var(--text-dim);
+    font-size: 13px;
+  }
+  .state-msg code {
+    font-family: var(--mono);
+    font-size: 12px;
+    background: var(--grey-bg);
+    padding: 2px 6px;
+    border-radius: 4px;
+    color: var(--accent);
+  }
+
+  @media (max-width: 500px) {
+    .cards { grid-template-columns: 1fr; }
+    .action-row { flex-direction: column; }
+  }
+
+  /* ── Toast ── */
+  .toast {
+    position: fixed;
+    bottom: 40px;
+    left: 50%;
+    transform: translateX(-50%);
+    background: #1a1a2e;
+    border: 1px solid rgba(124, 92, 252, 0.3);
+    color: #c8b8ff;
+    font-size: 13px;
+    padding: 10px 24px;
+    border-radius: 8px;
+    opacity: 0;
+    transition: opacity 0.3s;
+    pointer-events: none;
+    z-index: 100;
+    font-family: var(--font);
+  }
+  .toast.show { opacity: 1; }
+
+  /* ── Agent Selector Modal ── */
+  .modal-overlay {
+    display: none;
+    position: fixed;
+    inset: 0;
+    background: rgba(0,0,0,0.7);
+    z-index: 200;
+    align-items: center;
+    justify-content: center;
+  }
+  .modal-overlay.show {
+    display: flex;
+  }
+  .modal {
+    background: #141420;
+    border: 1px solid var(--border);
+    border-radius: 14px;
+    padding: 28px 24px 20px;
+    width: 360px;
+    max-width: 92vw;
+  }
+  .modal-title {
+    font-size: 16px;
+    font-weight: 600;
+    color: #d8d8e8;
+    margin-bottom: 6px;
+  }
+  .modal-sub {
+    font-size: 12px;
+    color: var(--text-dim);
+    margin-bottom: 18px;
+  }
+  .modal label {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 10px 12px;
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    margin-bottom: 8px;
+    cursor: pointer;
+    font-size: 13px;
+    transition: all 0.2s;
+    color: #b0b0c0;
+  }
+  .modal label:hover {
+    border-color: rgba(124, 92, 252, 0.3);
+    background: rgba(124, 92, 252, 0.04);
+  }
+  .modal label.checked {
+    border-color: rgba(124, 92, 252, 0.5);
+    background: rgba(124, 92, 252, 0.08);
+    color: #d8d8e8;
+  }
+  .modal label input {
+    accent-color: var(--accent);
+    width: 16px;
+    height: 16px;
+  }
+  .modal-warn {
+    font-size: 11px;
+    color: #ef4444;
+    margin-top: 4px;
+    min-height: 16px;
+  }
+  .modal-actions {
+    display: flex;
+    gap: 8px;
+    margin-top: 14px;
+    justify-content: flex-end;
+  }
+  .modal-btn {
+    font-size: 12px;
+    font-weight: 500;
+    padding: 8px 20px;
+    border-radius: 8px;
+    border: 1px solid var(--border);
+    cursor: pointer;
+    font-family: var(--font);
+    background: transparent;
+    color: var(--text-dim);
+    transition: all 0.2s;
+  }
+  .modal-btn:hover { border-color: rgba(255,255,255,0.15); color: #ccc; }
+  .modal-btn.primary {
+    background: var(--accent);
+    border-color: var(--accent);
+    color: #fff;
+  }
+  .modal-btn.primary:hover {
+    background: rgba(124, 92, 252, 0.8);
+  }
+  .modal-btn.primary:disabled {
+    opacity: 0.3;
+    pointer-events: none;
+  }
+
+  .manage-link {
+    text-align: center;
+    font-size: 10px;
+    margin-top: 10px;
+  }
+  .manage-link a {
+    color: var(--text-dim);
+    text-decoration: none;
+  }
+  .manage-link a:hover { color: var(--accent); }
+</style>
+</head>
+<body>
+<div class="container">
+
+  <!-- Header -->
+  <div class="header">
+    <div class="brand"><span>&#9670;</span> heropen <span class="tagline">Agent记忆系统</span></div>
+    <div class="version" id="version-tag">v-.-.-</div>
+  </div>
+
+  <!-- Level Row (grey) -->
+  <div class="level-row">
+    <span class="lv-label">使用时长 LV.</span>
+    <div class="lv-bar-wrap"><div class="lv-bar-fill"></div></div>
+    <span class="lv-hongbao">升级领红包</span>
+  </div>
+
+  <!-- Action Row -->
+  <div class="action-row">
+    <div class="btn btn-grey">上架自己的 Soul</div>
+    <a class="btn btn-bright" href="#" onclick="storeToast();return false;">Soul商店</a>
+  </div>
+
+  <!-- Agent Cards -->
+  <div class="cards" id="cards"></div>
+  <div class="manage-link" id="manage-link" style="display:none;">
+    <a href="#" onclick="resetSelection();return false;">管理 Agent</a>
+  </div>
+
+  <!-- Loading / Error state -->
+  <div class="state-msg" id="state-msg">
+    连接中…
+  </div>
+
+</div>
+
+<!-- Toast -->
+<div class="toast" id="toast">功能内测中</div>
+
+<!-- Agent Selector Modal -->
+<div class="modal-overlay" id="selector-overlay">
+  <div class="modal">
+    <div class="modal-title">选择 Agent</div>
+    <div class="modal-sub">免费版最多启用 2 个 Agent，请勾选你最常用的</div>
+    <div id="selector-list"></div>
+    <div class="modal-warn" id="selector-warn"></div>
+    <div class="modal-actions">
+      <button class="modal-btn" onclick="closeSelector()">取消</button>
+      <button class="modal-btn primary" id="selector-confirm" onclick="applySelection()">确认</button>
+    </div>
+  </div>
+</div>
+
+<script>
+const API = 'http://127.0.0.1:9020/api';
+
+let agentsData = {};
+let expandedCard = null;
+
+async function fetchHealth() {
+  try {
+    const res = await fetch(`${API}/health`);
+    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+    return await res.json();
+  } catch (e) {
+    return null;
+  }
+}
+
+async function fetchMemory(agent, limit = 20) {
+  try {
+    const res = await fetch(`${API}/memory/${agent}?limit=${limit}`);
+    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+    return await res.json();
+  } catch (e) {
+    return null;
+  }
+}
+
+function render() {
+  const cardsEl = document.getElementById('cards');
+  const stateEl = document.getElementById('state-msg');
+  const versionEl = document.getElementById('version-tag');
+  const cur = agentsData._version || '0.0.0';
+  const latest = '1.7.2';
+
+  if (compareVersions(latest, cur) > 0) {
+    versionEl.innerHTML = `<a class="version update" href="https://ksmn.cc/heropen/" target="_blank">v${latest} 可用</a>`;
+  } else {
+    versionEl.textContent = `v${cur}`;
+    versionEl.className = 'version';
+  }
+
+  const agentEntries = Object.entries(agentsData)
+    .filter(([k]) => !k.startsWith('_'))
+    .filter(([name]) => selectedAgents.includes(name));
+
+  if (agentEntries.length === 0) {
+    stateEl.innerHTML = `
+      <div>未检测到活跃 Agent</div>
+      <div style="margin-top:8px;font-size:11px;">
+        运行 <code>heropen auto-setup</code> 完成配置
+      </div>`;
+    cardsEl.innerHTML = '';
+    return;
+  }
+
+  stateEl.style.display = 'none';
+  cardsEl.innerHTML = agentEntries.map(([name, info]) => `
+    <div class="card" data-agent="${name}" onclick="toggleCard('${name}')">
+      <div class="card-agent">${name}</div>
+      <div class="card-platform">${info.source || 'MCP'}</div>
+      <div class="card-status${info.online ? '' : ' offline'}">
+        <span class="card-dot${info.online ? '' : ' offline'}"></span> ${info.online ? '在线' : '离线'}
+      </div>
+      <div class="card-today">
+        今天 <strong>${info.today}</strong> 条 ｜ 总计 <strong>${info.total}</strong> 条
+      </div>
+      <div class="expand" id="expand-${name}">
+        <div class="loading-text">加载中…</div>
+      </div>
+    </div>
+  `).join('');
+
+  // Show manage link if total agents > 2
+  const totalAgents = Object.entries(agentsData).filter(([k]) => !k.startsWith('_')).length;
+  document.getElementById('manage-link').style.display = totalAgents > 2 ? '' : 'none';
+}
+
+async function toggleCard(agentName) {
+  const card = document.querySelector(`.card[data-agent="${agentName}"]`);
+  if (!card) return;
+
+  const wasExpanded = card.classList.contains('expanded');
+
+  // Collapse all
+  document.querySelectorAll('.card.expanded').forEach(c => c.classList.remove('expanded'));
+
+  if (wasExpanded) {
+    expandedCard = null;
+    return;
+  }
+
+  // Expand this one
+  card.classList.add('expanded');
+  expandedCard = agentName;
+
+  const expandEl = document.getElementById(`expand-${agentName}`);
+  if (!expandEl) return;
+
+  expandEl.innerHTML = '<div class="loading-text">加载中…</div>';
+
+  const data = await fetchMemory(agentName);
+  if (!data || !data.results || data.results.length === 0) {
+    expandEl.innerHTML = '<div class="loading-text">暂无记忆记录</div>';
+    return;
+  }
+
+  expandEl.innerHTML = data.results.map(r => `
+    <div class="timeline-item">
+      <div class="timeline-date">${r.entry_date || '-'}</div>
+      <div class="timeline-section">${esc(r.section || '未分类')}</div>
+      <div class="timeline-content">${esc(r.content_preview || r.content || '')}</div>
+    </div>
+  `).join('')
+  + '<div class="expand-hint">… 需要完整记忆？直接问 Agent 就行</div>';
+}
+
+function compareVersions(a, b) {
+  const pa = a.split('.').map(Number);
+  const pb = b.split('.').map(Number);
+  for (let i = 0; i < 3; i++) {
+    if ((pa[i] || 0) > (pb[i] || 0)) return 1;
+    if ((pa[i] || 0) < (pb[i] || 0)) return -1;
+  }
+  return 0;
+}
+
+function esc(str) {
+  if (!str) return '';
+  return str.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+}
+
+// ── Toast ──
+function storeToast() {
+  const t = document.getElementById('toast');
+  t.classList.add('show');
+  setTimeout(() => t.classList.remove('show'), 2000);
+}
+
+// ── Agent Selection (free tier: max 2) ──
+const STORAGE_KEY = 'heropen_selected_agents';
+let selectedAgents = [];
+
+function loadSelection() {
+  try {
+    const raw = localStorage.getItem(STORAGE_KEY);
+    return raw ? JSON.parse(raw) : [];
+  } catch { return []; }
+}
+
+function saveSelection(arr) {
+  localStorage.setItem(STORAGE_KEY, JSON.stringify(arr));
+}
+
+function getAgentEntries() {
+  return Object.entries(agentsData).filter(([k]) => !k.startsWith('_'));
+}
+
+function checkAgentSelection() {
+  const all = getAgentEntries().map(([name]) => name);
+  const saved = loadSelection();
+
+  // Filter saved to only agents that still exist
+  const valid = saved.filter(n => all.includes(n));
+
+  if (valid.length > 0 && valid.length <= 2) {
+    selectedAgents = valid;
+    return true; // valid selection exists
+  }
+
+  // Auto-pick first 2
+  if (all.length <= 2) {
+    selectedAgents = all;
+    return true;
+  }
+
+  // Need user to pick
+  showAgentSelector(all, valid);
+  return false;
+}
+
+function showAgentSelector(allNames, preChecked) {
+  const list = document.getElementById('selector-list');
+  list.innerHTML = allNames.map(name => `
+    <label class="${preChecked.includes(name) ? 'checked' : ''}" onclick="toggleCheck(this)">
+      <input type="checkbox" value="${name}" ${preChecked.includes(name) ? 'checked' : ''}>
+      ${name}
+    </label>
+  `).join('');
+
+  document.getElementById('selector-warn').textContent = '';
+  document.getElementById('selector-confirm').disabled = preChecked.length !== 2;
+  document.getElementById('selector-overlay').classList.add('show');
+}
+
+function toggleCheck(label) {
+  const cb = label.querySelector('input');
+  cb.checked = !cb.checked;
+  if (cb.checked) label.classList.add('checked'); else label.classList.remove('checked');
+
+  const checked = document.querySelectorAll('#selector-list input:checked');
+  const btn = document.getElementById('selector-confirm');
+  const warn = document.getElementById('selector-warn');
+
+  if (checked.length > 2) {
+    warn.textContent = '最多只能选 2 个';
+    btn.disabled = true;
+  } else if (checked.length === 0) {
+    warn.textContent = '至少选 1 个';
+    btn.disabled = true;
+  } else {
+    warn.textContent = '';
+    btn.disabled = false;
+  }
+}
+
+function applySelection() {
+  const checked = document.querySelectorAll('#selector-list input:checked');
+  if (checked.length === 0 || checked.length > 2) return;
+
+  selectedAgents = Array.from(checked).map(c => c.value);
+  saveSelection(selectedAgents);
+  document.getElementById('selector-overlay').classList.remove('show');
+  render();
+}
+
+function closeSelector() {
+  document.getElementById('selector-overlay').classList.remove('show');
+}
+
+function resetSelection() {
+  localStorage.removeItem(STORAGE_KEY);
+  const all = getAgentEntries().map(([name]) => name);
+  selectedAgents = [];
+  showAgentSelector(all, all.slice(0, Math.min(2, all.length)));
+}
+
+// ── Init ──
+async function init() {
+  const health = await fetchHealth();
+  if (!health) {
+    document.getElementById('state-msg').innerHTML = `
+      <div>无法连接到 HeroPen 服务</div>
+      <div style="margin-top:8px;font-size:11px;">
+        请确认 <code>heropen-viewer</code> 已启动
+      </div>`;
+    return;
+  }
+
+  const agents = {};
+  if (health.agents) {
+    for (const [name, stats] of Object.entries(health.agents)) {
+      agents[name] = {
+        ...stats,
+        source: name === 'xiaokai' ? 'Hermes' : (name === 'shishi' ? 'Claude' : 'MCP'),
+      };
+    }
+  }
+  agents._version = health.version || '-.-.-';
+  agentsData = agents;
+
+  // Check agent selection before rendering
+  if (checkAgentSelection()) {
+    render();
+  }
+}
+
+init();
+
+// Auto-refresh every 30s
+setInterval(async () => {
+  const health = await fetchHealth();
+  if (health && health.agents) {
+    const agents = { _version: health.version || agentsData._version };
+    for (const [name, stats] of Object.entries(health.agents)) {
+      agents[name] = {
+        ...stats,
+        source: agentsData[name]?.source || 'MCP',
+      };
+    }
+    agentsData = agents;
+    // Only re-render if selection is already done (don't show selector on auto-refresh)
+    if (selectedAgents.length > 0) render();
+  }
+}, 30000);
+</script>
+</body>
+</html>

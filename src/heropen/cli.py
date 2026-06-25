@@ -119,6 +119,9 @@ def main():
     elif cmd == "panel":
         from heropen.panel import cmd_panel
         cmd_panel(args[1:])
+    elif cmd == "viewer":
+        from heropen.viewer_server import main as viewer_main
+        viewer_main()
     else:
         print(f"heropen: unknown command '{cmd}'")
         print_help()
@@ -155,6 +158,7 @@ Commands:
     health          Check system health (alias for status)
     session         Save or recover session checkpoint
     panel           Launch control panel (GUI/TUI)
+    viewer          Launch web viewer (http://127.0.0.1:9020)
     mcp             Start MCP server
     help            Show this help message
     version         Show version
