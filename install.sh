@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# HeroPen 一键安装脚本 (macOS / Linux)
+# heropen 一键安装脚本 (macOS / Linux)
 # 用法: curl -sSL ksmn.cc/heropen/install.sh | bash
 set -euo pipefail
 
@@ -16,7 +16,7 @@ err()  { printf "${RED}✗${NC} %s\n" "$*"; exit 1; }
 info() { printf "${CYAN}→${NC} %s\n" "$*"; }
 
 echo ""
-printf "${BOLD}${CYAN}◇ HeroPen · Agent记忆系统${NC}\n"
+printf "${BOLD}${CYAN}◇ heropen · Agent记忆系统${NC}\n"
 printf "  一行安装，开箱即用\n\n"
 echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
 
@@ -81,23 +81,15 @@ if ! "$PYTHON" -m pip --version &>/dev/null; then
     "$PYTHON" -m ensurepip --upgrade 2>/dev/null || true
 fi
 
-# ── Step 3: 安装 HeroPen ──
-info "安装 HeroPen..."
+# ── Step 3: 安装 heropen ──
+info "安装 heropen..."
 if "$PYTHON" -m pip install heropen --upgrade 2>&1; then
-    say "HeroPen 安装完成"
+    say "heropen 安装完成"
 else
-    err "HeroPen 安装失败，请检查网络连接后重试"
+    err "heropen 安装失败，请检查网络连接后重试"
 fi
 
-# ── Step 4: 启动配置 ──
-echo ""
-echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
-printf "${BOLD}接下来将启动交互配置...${NC}\n"
-printf "按照提示选择你的 AI 助手即可\n\n"
-
-"$PYTHON" -m heropen install
-
-# ── Step 5: 启动 Viewer ──
+# ── Step 4: 启动 Viewer ──
 echo ""
 echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
 info "启动 Viewer..."
@@ -137,6 +129,7 @@ printf "${BOLD}${GREEN}✨ 安装完成！${NC}\n"
 echo ""
 if [ "$VIEWER_READY" = true ]; then
     printf "  Viewer:    ${CYAN}http://127.0.0.1:9020${NC}  ${GREEN}(已启动)${NC}\n"
+    printf "  首次使用会在面板中完成 AI 助手配置\n"
 else
     printf "  启动 Viewer: ${CYAN}heropen viewer${NC}\n"
 fi

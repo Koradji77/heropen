@@ -1,11 +1,11 @@
-# HeroPen 一键安装脚本 (Windows PowerShell)
+# heropen 一键安装脚本 (Windows PowerShell)
 # 用法: irm ksmn.cc/heropen/install.ps1 | iex
 # 如果遇到执行策略限制，运行: Set-ExecutionPolicy -Scope Process -ExecutionPolicy Bypass
 
 $ErrorActionPreference = "Stop"
 
 Write-Host ""
-Write-Host "◇ HeroPen · Agent记忆系统" -ForegroundColor Cyan
+Write-Host "◇ heropen · Agent记忆系统" -ForegroundColor Cyan
 Write-Host "  一行安装，开箱即用" -ForegroundColor DarkGray
 Write-Host ("━" * 52)
 Write-Host ""
@@ -68,26 +68,17 @@ try {
     & $python -m ensurepip --upgrade 2>$null
 }
 
-# ── Step 3: 安装 HeroPen ──
-Write-Host "→ 安装 HeroPen..." -ForegroundColor Cyan
+# ── Step 3: 安装 heropen ──
+Write-Host "→ 安装 heropen..." -ForegroundColor Cyan
 try {
     & $python -m pip install heropen --upgrade
-    Write-Host "✓ HeroPen 安装完成" -ForegroundColor Green
+    Write-Host "✓ heropen 安装完成" -ForegroundColor Green
 } catch {
-    Write-Host "✗ HeroPen 安装失败，请检查网络连接后重试" -ForegroundColor Red
+    Write-Host "✗ heropen 安装失败，请检查网络连接后重试" -ForegroundColor Red
     exit 1
 }
 
-# ── Step 4: 启动配置 ──
-Write-Host ""
-Write-Host ("━" * 52)
-Write-Host "接下来将启动交互配置..." -ForegroundColor White
-Write-Host "按照提示选择你的 AI 助手即可" -ForegroundColor DarkGray
-Write-Host ""
-
-& $python -m heropen install
-
-# ── Step 5: 启动 Viewer ──
+# ── Step 4: 启动 Viewer ──
 Write-Host ""
 Write-Host ("━" * 52)
 Write-Host "→ 启动 Viewer..." -ForegroundColor Cyan
@@ -140,6 +131,7 @@ if ($viewerReady) {
     Write-Host "  Viewer:    " -NoNewline
     Write-Host "http://127.0.0.1:9020" -ForegroundColor Cyan -NoNewline
     Write-Host "  (已启动)" -ForegroundColor Green
+    Write-Host "  首次使用会在面板中完成 AI 助手配置" -ForegroundColor DarkGray
 } else {
     Write-Host "  启动 Viewer:  " -NoNewline
     Write-Host "heropen viewer" -ForegroundColor Cyan

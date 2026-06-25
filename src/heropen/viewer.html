@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Hero Pen · Agent记忆系统</title>
+<title>heropen · Agent记忆系统</title>
 <style>
   :root {
     --bg: #0a0a0f;
@@ -18,6 +18,7 @@
     --green-bg: rgba(74, 222, 128, 0.08);
     --grey-bg: rgba(102, 102, 128, 0.08);
     --grey-text: #555566;
+    --red: #ef4444;
     --radius: 12px;
     --font: -apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang SC", "Microsoft YaHei", sans-serif;
     --mono: "SF Mono", "Cascadia Code", "Consolas", monospace;
@@ -179,6 +180,27 @@
     border-color: rgba(124, 92, 252, 0.35);
     box-shadow: 0 0 20px var(--accent-glow);
   }
+  /* Locked card */
+  .card.locked {
+    opacity: 0.4;
+    cursor: default;
+    filter: grayscale(0.6);
+  }
+  .card.locked:hover {
+    background: var(--card-bg);
+    border-color: var(--border);
+  }
+  .card-lock-badge {
+    position: absolute;
+    top: 12px;
+    right: 12px;
+    font-size: 10px;
+    color: var(--grey-text);
+    background: rgba(0,0,0,0.3);
+    padding: 2px 8px;
+    border-radius: 4px;
+    border: 1px solid rgba(255,255,255,0.05);
+  }
   .card-agent {
     font-size: 14px;
     font-weight: 600;
@@ -199,7 +221,7 @@
     margin-bottom: 4px;
   }
   .card-status.offline {
-    color: #ef4444;
+    color: var(--red);
   }
   .card-dot {
     width: 6px;
@@ -209,7 +231,7 @@
     box-shadow: 0 0 6px rgba(74, 222, 128, 0.5);
   }
   .card-dot.offline {
-    background: #ef4444;
+    background: var(--red);
     box-shadow: 0 0 6px rgba(239, 68, 68, 0.4);
   }
   .card-today {
@@ -276,6 +298,19 @@
     margin-top: 4px;
   }
 
+  /* ── Locked row CTA ── */
+  .locked-row {
+    text-align: center;
+    margin-top: 8px;
+    font-size: 11px;
+    color: var(--grey-text);
+  }
+  .locked-row a {
+    color: var(--accent);
+    text-decoration: none;
+  }
+  .locked-row a:hover { text-decoration: underline; }
+
   /* ── Scrollbar ── */
   .expand::-webkit-scrollbar { width: 4px; }
   .expand::-webkit-scrollbar-track { background: transparent; }
@@ -317,42 +352,45 @@
     opacity: 0;
     transition: opacity 0.3s;
     pointer-events: none;
-    z-index: 100;
+    z-index: 300;
     font-family: var(--font);
   }
   .toast.show { opacity: 1; }
 
-  /* ── Agent Selector Modal ── */
-  .modal-overlay {
+  /* ── Overlay base ── */
+  .overlay {
     display: none;
     position: fixed;
     inset: 0;
-    background: rgba(0,0,0,0.7);
+    background: rgba(0,0,0,0.72);
     z-index: 200;
     align-items: center;
     justify-content: center;
   }
-  .modal-overlay.show {
-    display: flex;
-  }
+  .overlay.show { display: flex; }
+
+  /* ── Modal (agent selector / setup wizard) ── */
   .modal {
     background: #141420;
     border: 1px solid var(--border);
     border-radius: 14px;
     padding: 28px 24px 20px;
-    width: 360px;
+    width: 400px;
     max-width: 92vw;
+    max-height: 85vh;
+    overflow-y: auto;
   }
   .modal-title {
-    font-size: 16px;
-    font-weight: 600;
-    color: #d8d8e8;
-    margin-bottom: 6px;
+    font-size: 18px;
+    font-weight: 700;
+    color: #e0e0f0;
+    margin-bottom: 4px;
   }
   .modal-sub {
     font-size: 12px;
     color: var(--text-dim);
-    margin-bottom: 18px;
+    margin-bottom: 20px;
+    line-height: 1.6;
   }
   .modal label {
     display: flex;
@@ -383,14 +421,14 @@
   }
   .modal-warn {
     font-size: 11px;
-    color: #ef4444;
+    color: var(--red);
     margin-top: 4px;
     min-height: 16px;
   }
   .modal-actions {
     display: flex;
     gap: 8px;
-    margin-top: 14px;
+    margin-top: 16px;
     justify-content: flex-end;
   }
   .modal-btn {
@@ -411,14 +449,44 @@
     border-color: var(--accent);
     color: #fff;
   }
-  .modal-btn.primary:hover {
-    background: rgba(124, 92, 252, 0.8);
-  }
+  .modal-btn.primary:hover { background: rgba(124, 92, 252, 0.85); }
   .modal-btn.primary:disabled {
     opacity: 0.3;
     pointer-events: none;
   }
 
+  /* Setup wizard steps */
+  .wizard-step {
+    text-align: center;
+    padding: 20px 0;
+  }
+  .wizard-step .spinner {
+    display: inline-block;
+    width: 32px;
+    height: 32px;
+    border: 3px solid var(--border);
+    border-top-color: var(--accent);
+    border-radius: 50%;
+    animation: spin 0.6s linear infinite;
+    margin-bottom: 12px;
+  }
+  @keyframes spin { to { transform: rotate(360deg); } }
+
+  .wizard-step .step-text {
+    font-size: 13px;
+    color: var(--text-dim);
+  }
+  .wizard-step .step-detail {
+    font-size: 12px;
+    color: var(--grey-text);
+    margin-top: 4px;
+  }
+  .wizard-step .done-icon {
+    font-size: 40px;
+    margin-bottom: 8px;
+  }
+
+  /* ── Manage link ── */
   .manage-link {
     text-align: center;
     font-size: 10px;
@@ -429,6 +497,28 @@
     text-decoration: none;
   }
   .manage-link a:hover { color: var(--accent); }
+
+  .upgrade-plus {
+    display: block;
+    width: 100%;
+    margin-top: 20px;
+    padding: 11px 0;
+    text-align: center;
+    font-size: 13px;
+    font-weight: 600;
+    font-family: var(--font);
+    color: #fff;
+    background: linear-gradient(135deg, #7c3aed, #a855f7);
+    border: none;
+    border-radius: 10px;
+    cursor: pointer;
+    text-decoration: none;
+    transition: opacity 0.2s, transform 0.15s;
+  }
+  .upgrade-plus:hover {
+    opacity: 0.9;
+    transform: translateY(-1px);
+  }
 </style>
 </head>
 <body>
@@ -455,22 +545,102 @@
 
   <!-- Agent Cards -->
   <div class="cards" id="cards"></div>
+  <div class="locked-row" id="locked-msg" style="display:none;">
+    以上为免费版可用的 2 个 Agent。
+    <a href="https://ksmn.cc/heropen/" target="_blank">升级 Plus 解锁全部 →</a>
+  </div>
   <div class="manage-link" id="manage-link" style="display:none;">
-    <a href="#" onclick="resetSelection();return false;">管理 Agent</a>
+    <a href="#" onclick="openAgentSelector();return false;">管理 Agent</a>
   </div>
 
+  <a class="upgrade-plus" href="https://ksmn.cc/heropen/" target="_blank">升级 Plus</a>
+
   <!-- Loading / Error state -->
-  <div class="state-msg" id="state-msg">
-    连接中…
-  </div>
+  <div class="state-msg" id="state-msg">连接中…</div>
 
 </div>
 
 <!-- Toast -->
 <div class="toast" id="toast">功能内测中</div>
 
-<!-- Agent Selector Modal -->
-<div class="modal-overlay" id="selector-overlay">
+<!-- ── Setup Wizard Overlay ── -->
+<div class="overlay" id="setup-overlay">
+  <div class="modal" id="setup-modal">
+    <!-- Step 0: Welcome -->
+    <div id="setup-step-welcome">
+      <div class="modal-title">欢迎使用 heropen</div>
+      <div class="modal-sub">
+        给 AI 助手装上长期记忆。<br>
+        我们检测到你还没配置——帮你一步搞定。
+      </div>
+      <div class="modal-actions">
+        <button class="modal-btn primary" onclick="setupStart()">开始设置</button>
+      </div>
+    </div>
+    <!-- Step 1: Scanning -->
+    <div id="setup-step-scan" style="display:none;">
+      <div class="wizard-step">
+        <div class="spinner"></div>
+        <div class="step-text">正在扫描本机 AI 助手…</div>
+        <div class="step-detail" id="scan-status"></div>
+      </div>
+    </div>
+    <!-- Step 2: Select assistants -->
+    <div id="setup-step-select" style="display:none;">
+      <div class="modal-title">选择要使用的 AI 助手</div>
+      <div class="modal-sub">免费版最多配置 2 个。选好后自动写入 MCP 配置。</div>
+      <div id="setup-select-list"></div>
+      <div class="modal-warn" id="setup-select-warn"></div>
+      <div class="modal-actions">
+        <button class="modal-btn" onclick="setupSkip()">跳过</button>
+        <button class="modal-btn primary" id="setup-confirm-btn" onclick="setupConfigure()">确认配置</button>
+      </div>
+    </div>
+    <!-- Step 3: Configuring -->
+    <div id="setup-step-config" style="display:none;">
+      <div class="wizard-step">
+        <div class="spinner"></div>
+        <div class="step-text">正在写入 MCP 配置…</div>
+        <div class="step-detail" id="config-status"></div>
+      </div>
+    </div>
+    <!-- Step 4: Done -->
+    <div id="setup-step-done" style="display:none;">
+      <div class="wizard-step">
+        <div class="done-icon">&#10003;</div>
+        <div class="step-text" style="font-size:15px;font-weight:600;color:#e0e0f0;">配置完成！</div>
+        <div class="step-detail" id="done-detail"></div>
+      </div>
+      <div class="modal-actions">
+        <button class="modal-btn primary" onclick="setupFinish()">开始使用</button>
+      </div>
+    </div>
+    <!-- Step: No assistants found -->
+    <div id="setup-step-empty" style="display:none;">
+      <div class="wizard-step">
+        <div class="step-text">未检测到支持的 AI 助手</div>
+        <div class="step-detail">你可以之后手动配置，或者直接查看已有的 Agent。</div>
+      </div>
+      <div class="modal-actions">
+        <button class="modal-btn primary" onclick="setupFinish()">进入面板</button>
+      </div>
+    </div>
+    <!-- Error step -->
+    <div id="setup-step-error" style="display:none;">
+      <div class="wizard-step">
+        <div class="step-text" style="color:var(--red);">配置失败</div>
+        <div class="step-detail" id="error-detail"></div>
+      </div>
+      <div class="modal-actions">
+        <button class="modal-btn" onclick="setupFinish()">跳过，以后再说</button>
+        <button class="modal-btn primary" onclick="setupRetry()">重试</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ── Agent Selector Modal (manage) ── -->
+<div class="overlay" id="selector-overlay">
   <div class="modal">
     <div class="modal-title">选择 Agent</div>
     <div class="modal-sub">免费版最多启用 2 个 Agent，请勾选你最常用的</div>
@@ -485,18 +655,150 @@
 
 <script>
 const API = 'http://127.0.0.1:9020/api';
+const FREE_LIMIT = 2;
+const STORAGE_KEY = 'heropen_selected_agents';
+const STORAGE_SETUP_DONE = 'heropen_setup_done';
 
 let agentsData = {};
-let expandedCard = null;
+let selectedAgents = [];
+let freeLimit = FREE_LIMIT;
+let allAgentNames = [];
+
+// ── Setup Wizard ──
+
+function showSetupStep(id) {
+  ['welcome','scan','select','config','done','empty','error'].forEach(s => {
+    const el = document.getElementById('setup-step-' + s);
+    if (el) el.style.display = 'none';
+  });
+  const el = document.getElementById('setup-step-' + id);
+  if (el) el.style.display = '';
+}
+
+function openSetup() {
+  showSetupStep('welcome');
+  document.getElementById('setup-overlay').classList.add('show');
+}
+
+function setupStart() {
+  showSetupStep('scan');
+  document.getElementById('scan-status').textContent = '请稍候…';
+  scanAndShow();
+}
+
+async function scanAndShow() {
+  try {
+    const res = await fetch(`${API}/setup/scan`);
+    const data = await res.json();
+    const assistants = data.assistants || [];
+    freeLimit = data.free_limit || FREE_LIMIT;
+
+    if (assistants.length === 0) {
+      showSetupStep('empty');
+      return;
+    }
+
+    const configured = assistants.filter(a => a.configured);
+    const listEl = document.getElementById('setup-select-list');
+    listEl.innerHTML = assistants.map(a => `
+      <label class="${configured.includes(a) ? 'checked' : ''}"
+             onclick="setupToggle(this, ${configured.includes(a)})">
+        <input type="checkbox" value="${a.id}" ${configured.includes(a) ? 'checked' : ''}>
+        <span style="flex:1">
+          <span style="font-weight:500">${a.name}</span>
+          <span style="font-size:10px;color:var(--grey-text);display:block">${a.path}</span>
+        </span>
+        ${a.configured ? '<span style="font-size:10px;color:var(--green)">已配置</span>' : ''}
+      </label>
+    `).join('');
+
+    document.getElementById('setup-select-warn').textContent = '';
+    const confirmBtn = document.getElementById('setup-confirm-btn');
+    confirmBtn.disabled = configured.length === 0;
+
+    showSetupStep('select');
+  } catch (e) {
+    showSetupStep('empty');
+  }
+}
+
+function setupToggle(label, wasConfigured) {
+  const cb = label.querySelector('input');
+  cb.checked = !cb.checked;
+  if (cb.checked) { label.classList.add('checked'); } else { label.classList.remove('checked'); }
+
+  const checked = document.querySelectorAll('#setup-select-list input:checked');
+  const btn = document.getElementById('setup-confirm-btn');
+  const warn = document.getElementById('setup-select-warn');
+
+  if (checked.length > freeLimit) {
+    warn.textContent = '免费版最多选 ' + freeLimit + ' 个';
+    btn.disabled = true;
+  } else if (checked.length === 0) {
+    warn.textContent = '至少选 1 个';
+    btn.disabled = true;
+  } else {
+    warn.textContent = '';
+    btn.disabled = false;
+  }
+}
+
+async function setupConfigure() {
+  const checked = document.querySelectorAll('#setup-select-list input:checked');
+  if (checked.length === 0 || checked.length > freeLimit) return;
+
+  const ids = Array.from(checked).map(c => c.value);
+
+  showSetupStep('config');
+  document.getElementById('config-status').textContent = '写入 MCP 配置中…';
+
+  try {
+    const res = await fetch(`${API}/setup/configure`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ assistants: ids }),
+    });
+    const data = await res.json();
+
+    const okCount = Object.values(data.results || {}).filter(r => r.ok).length;
+    document.getElementById('done-detail').textContent =
+      `已为 ${okCount} 个助手配置 heropen。重启 AI 助手后生效。`;
+
+    showSetupStep('done');
+    // Mark setup done
+    try { localStorage.setItem(STORAGE_SETUP_DONE, '1'); } catch(e) {}
+  } catch (e) {
+    document.getElementById('error-detail').textContent = '网络错误，请稍后重试。';
+    showSetupStep('error');
+  }
+}
+
+function setupSkip() {
+  try { localStorage.setItem(STORAGE_SETUP_DONE, '1'); } catch(e) {}
+  document.getElementById('setup-overlay').classList.remove('show');
+  refreshAndRender();
+}
+
+function setupFinish() {
+  document.getElementById('setup-overlay').classList.remove('show');
+  refreshAndRender();
+}
+
+let setupRetried = false;
+function setupRetry() {
+  if (setupRetried) { setupFinish(); return; }
+  setupRetried = true;
+  setupStart();
+}
+
+// ── API ──
 
 async function fetchHealth() {
   try {
     const res = await fetch(`${API}/health`);
     if (!res.ok) throw new Error(`HTTP ${res.status}`);
     return await res.json();
-  } catch (e) {
-    return null;
-  }
+  } catch (e) { return null; }
 }
 
 async function fetchMemory(agent, limit = 20) {
@@ -504,15 +806,41 @@ async function fetchMemory(agent, limit = 20) {
     const res = await fetch(`${API}/memory/${agent}?limit=${limit}`);
     if (!res.ok) throw new Error(`HTTP ${res.status}`);
     return await res.json();
-  } catch (e) {
-    return null;
-  }
+  } catch (e) { return null; }
 }
+
+async function fetchSetupStatus() {
+  try {
+    const res = await fetch(`${API}/setup/status`);
+    return await res.json();
+  } catch (e) { return null; }
+}
+
+// ── Agent Selection ──
+
+function loadSelection() {
+  try {
+    const raw = localStorage.getItem(STORAGE_KEY);
+    return raw ? JSON.parse(raw) : [];
+  } catch { return []; }
+}
+
+function saveSelection(arr) {
+  try { localStorage.setItem(STORAGE_KEY, JSON.stringify(arr)); } catch(e) {}
+}
+
+function isSetupDone() {
+  try { return localStorage.getItem(STORAGE_SETUP_DONE) === '1'; } catch(e) { return false; }
+}
+
+// ── Render ──
 
 function render() {
   const cardsEl = document.getElementById('cards');
   const stateEl = document.getElementById('state-msg');
   const versionEl = document.getElementById('version-tag');
+  const lockedMsg = document.getElementById('locked-msg');
+  const manageLink = document.getElementById('manage-link');
   const cur = agentsData._version || '0.0.0';
   const latest = '1.7.2';
 
@@ -523,22 +851,35 @@ function render() {
     versionEl.className = 'version';
   }
 
-  const agentEntries = Object.entries(agentsData)
-    .filter(([k]) => !k.startsWith('_'))
-    .filter(([name]) => selectedAgents.includes(name));
+  allAgentNames = Object.entries(agentsData).filter(([k]) => !k.startsWith('_')).map(([n]) => n);
 
-  if (agentEntries.length === 0) {
-    stateEl.innerHTML = `
-      <div>未检测到活跃 Agent</div>
-      <div style="margin-top:8px;font-size:11px;">
-        运行 <code>heropen auto-setup</code> 完成配置
-      </div>`;
+  if (allAgentNames.length === 0) {
+    stateEl.innerHTML = '<div>未检测到活跃 Agent</div><div style="margin-top:8px;font-size:11px;">完成 AI 助手配置后，Agent 会自动出现在这里。</div>';
     cardsEl.innerHTML = '';
+    lockedMsg.style.display = 'none';
+    manageLink.style.display = 'none';
     return;
   }
 
   stateEl.style.display = 'none';
-  cardsEl.innerHTML = agentEntries.map(([name, info]) => `
+
+  // Determine active agents (respect selection, fallback to first FREE_LIMIT)
+  if (selectedAgents.length === 0) {
+    selectedAgents = allAgentNames.slice(0, Math.min(freeLimit, allAgentNames.length));
+  }
+  // Clean invalid selections
+  selectedAgents = selectedAgents.filter(n => allAgentNames.includes(n));
+  if (selectedAgents.length === 0) {
+    selectedAgents = allAgentNames.slice(0, Math.min(freeLimit, allAgentNames.length));
+  }
+
+  const activeNames = new Set(selectedAgents);
+  const lockedNames = allAgentNames.filter(n => !activeNames.has(n));
+
+  // Active cards
+  let html = selectedAgents.map(name => {
+    const info = agentsData[name] || {};
+    return `
     <div class="card" data-agent="${name}" onclick="toggleCard('${name}')">
       <div class="card-agent">${name}</div>
       <div class="card-platform">${info.source || 'MCP'}</div>
@@ -546,37 +887,52 @@ function render() {
         <span class="card-dot${info.online ? '' : ' offline'}"></span> ${info.online ? '在线' : '离线'}
       </div>
       <div class="card-today">
-        今天 <strong>${info.today}</strong> 条 ｜ 总计 <strong>${info.total}</strong> 条
+        今天 <strong>${info.today || 0}</strong> 条 ｜ 总计 <strong>${info.total || 0}</strong> 条
       </div>
       <div class="expand" id="expand-${name}">
         <div class="loading-text">加载中…</div>
       </div>
-    </div>
-  `).join('');
+    </div>`;
+  }).join('');
 
-  // Show manage link if total agents > 2
-  const totalAgents = Object.entries(agentsData).filter(([k]) => !k.startsWith('_')).length;
-  document.getElementById('manage-link').style.display = totalAgents > 2 ? '' : 'none';
+  // Locked cards (grey)
+  html += lockedNames.map(name => {
+    const info = agentsData[name] || {};
+    return `
+    <div class="card locked">
+      <div class="card-lock-badge">Plus</div>
+      <div class="card-agent">${name}</div>
+      <div class="card-platform">${info.source || 'MCP'}</div>
+      <div class="card-status${info.online ? '' : ' offline'}">
+        <span class="card-dot${info.online ? '' : ' offline'}"></span> ${info.online ? '在线' : '离线'}
+      </div>
+      <div class="card-today">
+        今天 <strong>${info.today || 0}</strong> 条 ｜ 总计 <strong>${info.total || 0}</strong> 条
+      </div>
+    </div>`;
+  }).join('');
+
+  cardsEl.innerHTML = html;
+
+  // Locked message
+  lockedMsg.style.display = lockedNames.length > 0 ? '' : 'none';
+
+  // Manage link
+  manageLink.style.display = allAgentNames.length > 2 ? '' : 'none';
 }
+
+// ── Card expand ──
 
 async function toggleCard(agentName) {
   const card = document.querySelector(`.card[data-agent="${agentName}"]`);
-  if (!card) return;
+  if (!card || card.classList.contains('locked')) return;
 
   const wasExpanded = card.classList.contains('expanded');
-
-  // Collapse all
   document.querySelectorAll('.card.expanded').forEach(c => c.classList.remove('expanded'));
 
-  if (wasExpanded) {
-    expandedCard = null;
-    return;
-  }
+  if (wasExpanded) return;
 
-  // Expand this one
   card.classList.add('expanded');
-  expandedCard = agentName;
-
   const expandEl = document.getElementById(`expand-${agentName}`);
   if (!expandEl) return;
 
@@ -598,6 +954,59 @@ async function toggleCard(agentName) {
   + '<div class="expand-hint">… 需要完整记忆？直接问 Agent 就行</div>';
 }
 
+// ── Agent Selector Modal ──
+
+function openAgentSelector() {
+  const list = document.getElementById('selector-list');
+  list.innerHTML = allAgentNames.map(name => `
+    <label class="${selectedAgents.includes(name) ? 'checked' : ''}" onclick="selToggle(this)">
+      <input type="checkbox" value="${name}" ${selectedAgents.includes(name) ? 'checked' : ''}>
+      ${name}
+    </label>
+  `).join('');
+
+  document.getElementById('selector-warn').textContent = '';
+  document.getElementById('selector-confirm').disabled = selectedAgents.length < 1 || selectedAgents.length > freeLimit;
+  document.getElementById('selector-overlay').classList.add('show');
+}
+
+function selToggle(label) {
+  const cb = label.querySelector('input');
+  cb.checked = !cb.checked;
+  if (cb.checked) label.classList.add('checked'); else label.classList.remove('checked');
+
+  const checked = document.querySelectorAll('#selector-list input:checked');
+  const btn = document.getElementById('selector-confirm');
+  const warn = document.getElementById('selector-warn');
+
+  if (checked.length > freeLimit) {
+    warn.textContent = '最多只能选 ' + freeLimit + ' 个';
+    btn.disabled = true;
+  } else if (checked.length === 0) {
+    warn.textContent = '至少选 1 个';
+    btn.disabled = true;
+  } else {
+    warn.textContent = '';
+    btn.disabled = false;
+  }
+}
+
+function applySelection() {
+  const checked = document.querySelectorAll('#selector-list input:checked');
+  if (checked.length === 0 || checked.length > freeLimit) return;
+
+  selectedAgents = Array.from(checked).map(c => c.value);
+  saveSelection(selectedAgents);
+  document.getElementById('selector-overlay').classList.remove('show');
+  render();
+}
+
+function closeSelector() {
+  document.getElementById('selector-overlay').classList.remove('show');
+}
+
+// ── Helpers ──
+
 function compareVersions(a, b) {
   const pa = a.split('.').map(Number);
   const pb = b.split('.').map(Number);
@@ -614,119 +1023,60 @@ function esc(str) {
 }
 
 // ── Toast ──
+
 function storeToast() {
   const t = document.getElementById('toast');
   t.classList.add('show');
   setTimeout(() => t.classList.remove('show'), 2000);
 }
 
-// ── Agent Selection (free tier: max 2) ──
-const STORAGE_KEY = 'heropen_selected_agents';
-let selectedAgents = [];
+// ── Refresh & render ──
 
-function loadSelection() {
-  try {
-    const raw = localStorage.getItem(STORAGE_KEY);
-    return raw ? JSON.parse(raw) : [];
-  } catch { return []; }
-}
-
-function saveSelection(arr) {
-  localStorage.setItem(STORAGE_KEY, JSON.stringify(arr));
-}
-
-function getAgentEntries() {
-  return Object.entries(agentsData).filter(([k]) => !k.startsWith('_'));
-}
-
-function checkAgentSelection() {
-  const all = getAgentEntries().map(([name]) => name);
-  const saved = loadSelection();
-
-  // Filter saved to only agents that still exist
-  const valid = saved.filter(n => all.includes(n));
-
-  if (valid.length > 0 && valid.length <= 2) {
-    selectedAgents = valid;
-    return true; // valid selection exists
+async function refreshAndRender() {
+  const health = await fetchHealth();
+  if (!health) {
+    document.getElementById('state-msg').innerHTML = `
+      <div>无法连接到 heropen 服务</div>
+      <div style="margin-top:8px;font-size:11px;">请确认 viewer 已启动</div>`;
+    return;
   }
 
-  // Auto-pick first 2
-  if (all.length <= 2) {
-    selectedAgents = all;
-    return true;
+  // Check if agents just appeared (setup just finished)
+  const wasEmpty = allAgentNames.length === 0;
+
+  const agents = {};
+  if (health.agents) {
+    for (const [name, stats] of Object.entries(health.agents)) {
+      agents[name] = {
+        ...stats,
+        source: agentsData[name]?.source || 'MCP',
+      };
+    }
+  }
+  agents._version = health.version || '-.-.-';
+  agentsData = agents;
+  freeLimit = health.free_limit || FREE_LIMIT;
+  allAgentNames = Object.entries(agentsData).filter(([k]) => !k.startsWith('_')).map(([n]) => n);
+
+  // Pick initial selection if none
+  if (selectedAgents.length === 0 && allAgentNames.length > 0) {
+    selectedAgents = allAgentNames.slice(0, Math.min(freeLimit, allAgentNames.length));
   }
 
-  // Need user to pick
-  showAgentSelector(all, valid);
-  return false;
-}
-
-function showAgentSelector(allNames, preChecked) {
-  const list = document.getElementById('selector-list');
-  list.innerHTML = allNames.map(name => `
-    <label class="${preChecked.includes(name) ? 'checked' : ''}" onclick="toggleCheck(this)">
-      <input type="checkbox" value="${name}" ${preChecked.includes(name) ? 'checked' : ''}>
-      ${name}
-    </label>
-  `).join('');
-
-  document.getElementById('selector-warn').textContent = '';
-  document.getElementById('selector-confirm').disabled = preChecked.length !== 2;
-  document.getElementById('selector-overlay').classList.add('show');
-}
-
-function toggleCheck(label) {
-  const cb = label.querySelector('input');
-  cb.checked = !cb.checked;
-  if (cb.checked) label.classList.add('checked'); else label.classList.remove('checked');
-
-  const checked = document.querySelectorAll('#selector-list input:checked');
-  const btn = document.getElementById('selector-confirm');
-  const warn = document.getElementById('selector-warn');
-
-  if (checked.length > 2) {
-    warn.textContent = '最多只能选 2 个';
-    btn.disabled = true;
-  } else if (checked.length === 0) {
-    warn.textContent = '至少选 1 个';
-    btn.disabled = true;
-  } else {
-    warn.textContent = '';
-    btn.disabled = false;
-  }
-}
-
-function applySelection() {
-  const checked = document.querySelectorAll('#selector-list input:checked');
-  if (checked.length === 0 || checked.length > 2) return;
-
-  selectedAgents = Array.from(checked).map(c => c.value);
-  saveSelection(selectedAgents);
-  document.getElementById('selector-overlay').classList.remove('show');
   render();
+
+  // If was empty and now has agents (setup just completed), close setup
+  if (wasEmpty && allAgentNames.length > 0) {
+    document.getElementById('setup-overlay').classList.remove('show');
+  }
 }
 
-function closeSelector() {
-  document.getElementById('selector-overlay').classList.remove('show');
-}
-
-function resetSelection() {
-  localStorage.removeItem(STORAGE_KEY);
-  const all = getAgentEntries().map(([name]) => name);
-  selectedAgents = [];
-  showAgentSelector(all, all.slice(0, Math.min(2, all.length)));
-}
-
-// ── Init ──
 async function init() {
   const health = await fetchHealth();
   if (!health) {
     document.getElementById('state-msg').innerHTML = `
-      <div>无法连接到 HeroPen 服务</div>
-      <div style="margin-top:8px;font-size:11px;">
-        请确认 <code>heropen-viewer</code> 已启动
-      </div>`;
+      <div>无法连接到 heropen 服务</div>
+      <div style="margin-top:8px;font-size:11px;">请确认 viewer 已启动</div>`;
     return;
   }
 
@@ -735,20 +1085,52 @@ async function init() {
     for (const [name, stats] of Object.entries(health.agents)) {
       agents[name] = {
         ...stats,
-        source: name === 'xiaokai' ? 'Hermes' : (name === 'shishi' ? 'Claude' : 'MCP'),
+        source: 'MCP',
       };
     }
   }
   agents._version = health.version || '-.-.-';
   agentsData = agents;
+  freeLimit = health.free_limit || FREE_LIMIT;
+  allAgentNames = Object.entries(agentsData).filter(([k]) => !k.startsWith('_')).map(([n]) => n);
 
-  // Check agent selection before rendering
-  if (checkAgentSelection()) {
-    render();
+  // First-time detection
+  if (allAgentNames.length === 0 && !isSetupDone()) {
+    openSetup();
+    // Start polling in background for agents to appear
+    pollForAgents();
+    return;
   }
+
+  // Load saved selection
+  selectedAgents = loadSelection().filter(n => allAgentNames.includes(n));
+  if (selectedAgents.length === 0) {
+    selectedAgents = allAgentNames.slice(0, Math.min(freeLimit, allAgentNames.length));
+  }
+
+  render();
 }
 
-init();
+// Background poll while setup wizard is open
+function pollForAgents() {
+  let count = 0;
+  const timer = setInterval(async () => {
+    const health = await fetchHealth();
+    if (health && health.agents) {
+      const names = Object.keys(health.agents).filter(k => !k.startsWith('_'));
+      if (names.length > 0) {
+        clearInterval(timer);
+        // Agents detected, close wizard and render
+        document.getElementById('setup-overlay').classList.remove('show');
+        try { localStorage.setItem(STORAGE_SETUP_DONE, '1'); } catch(e) {}
+        refreshAndRender();
+        return;
+      }
+    }
+    count++;
+    if (count > 60) clearInterval(timer); // Give up after 2 mins
+  }, 2000);
+}
 
 // Auto-refresh every 30s
 setInterval(async () => {
@@ -756,16 +1138,16 @@ setInterval(async () => {
   if (health && health.agents) {
     const agents = { _version: health.version || agentsData._version };
     for (const [name, stats] of Object.entries(health.agents)) {
-      agents[name] = {
-        ...stats,
-        source: agentsData[name]?.source || 'MCP',
-      };
+      agents[name] = { ...stats, source: agentsData[name]?.source || 'MCP' };
     }
     agentsData = agents;
-    // Only re-render if selection is already done (don't show selector on auto-refresh)
+    freeLimit = health.free_limit || FREE_LIMIT;
+    allAgentNames = Object.entries(agentsData).filter(([k]) => !k.startsWith('_')).map(([n]) => n);
     if (selectedAgents.length > 0) render();
   }
 }, 30000);
+
+init();
 </script>
 </body>
 </html>
