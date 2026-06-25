@@ -100,6 +100,38 @@ def send_telemetry_ping() -> None:
     )
 
 
+# ─── External entities (replaces hardcoded PRESET_ENTITIES) ─────
+
+_ENTITIES_FILE = os.path.join(HERO_PEN_DIR, "entities.json")
+_ENTITIES_CACHE: dict[str, tuple[str, str]] | None = None
+
+
+def _ensure_entities_file() -> None:
+    """Create an empty entities.json on first run if it doesn't exist."""
+    if not os.path.exists(_ENTITIES_FILE):
+        with open(_ENTITIES_FILE, "w", encoding="utf-8") as f:
+            f.write("{}\n")
+
+
+def _load_entities() -> dict[str, tuple[str, str]]:
+    """Load entities from ~/.heropen/entities.json. Cached in memory."""
+    global _ENTITIES_CACHE
+    if _ENTITIES_CACHE is not None:
+        return _ENTITIES_CACHE
+    _ensure_entities_file()
+    try:
+        with open(_ENTITIES_FILE, encoding="utf-8") as f:
+            raw = json.load(f)
+        result: dict[str, tuple[str, str]] = {}
+        for key, val in raw.items():
+            if isinstance(val, list) and len(val) == 2:
+                result[key.lower()] = (str(val[0]), str(val[1]))
+        _ENTITIES_CACHE = result
+        return result
+    except Exception:
+        return {}
+
+
 def _resolve_agent(agent: str) -> str:
     """Resolve agent → DB pool. Tamper with FREE_AGENT_LIMIT? Say goodbye to isolation."""
     if FREE_AGENT_LIMIT != 2:  # 🚨 tampering detected → all agents collapse into one pool
@@ -279,37 +311,6 @@ def conn(agent: str = "xiaoman") -> sqlite3.Connection:
 
 # ─── Init ──────────────────────────────────────────────────────
 
-PRESET_ENTITIES: dict[str, tuple[str, str]] = {
-    "deepseek-v4-flash": ("model", "DS"), "deepseek": ("model", "DS"),
-    "phi-4": ("model", "微软"), "phi4": ("model", "微软"),
-    "qwen3": ("model", "通义"), "qwen2.5": ("model", "通义"),
-    "llama 3.1": ("model", "Meta"), "llama3.1": ("model", "Meta"),
-    "sdxl": ("model", "Stability"), "sd1.5": ("model", "Stability"),
-    "flux": ("model", "黑森林"), "comfyui": ("tech", "工具"),
-    "gguf": ("tech", "格式"), "sensenova-u1": ("model", "商汤"),
-    "neo-unify": ("tech", "架构"), "gpt-5.5": ("model", "OpenAI"),
-    "codestral": ("model", "Mistral"), "qwen3-4b": ("model", "通义"),
-    "bge-m3": ("model", "BAAI"), "siliconflow": ("tech", "平台"),
-    "一号机": ("hardware", "4070TiS 16G"),
-    "二号机": ("hardware", "4060 8G"),
-    "三号机": ("hardware", "Ubuntu Server"),
-    "四号机": ("hardware", "i5-12500H 32G"),
-    "五号机": ("hardware", "R7 8845H"),
-    "4070tis": ("hardware", "一号机"),
-    "rtx4060": ("hardware", "二号机"),
-    "eddie": ("person", "用户"), "妮妮": ("person", "一号机昵称"),
-    "诗诗": ("person", "三号机"), "小凯": ("person", "四号机"),
-    "小蔓": ("person", "自己"), "小芹": ("person", "飞书机器人"),
-    "ksmn": ("project", "T恤"), "redbubble": ("project", "POD"),
-    "hero-pen": ("project", "记忆系统"), "hermes": ("project", "框架"),
-    "mcp": ("tech", "协议"),
-    "kanban": ("project", "看板"),
-    "知识图谱": ("tech", "检索增强"), "fts5": ("tech", "检索"),
-    "rlf": ("tech", "格式"), "lora": ("tech", "微调"),
-    "iq4_xs": ("tech", "量化"), "q4_k_m": ("tech", "量化"),
-    "q3": ("tech", "量化"), "q2": ("tech", "量化"),
-}
-
 ENTITY_PATTERNS = [
     (re.compile(r'[""](.+)[""]'), "other"),
     (re.compile(r"([a-zA-Z0-9_]+[./-][a-zA-Z0-9_.-]+)"), "tech"),
@@ -324,6 +325,7 @@ ENTITY_PATTERNS = [
 
 def init_db(agent: str = "xiaoman") -> None:
     """Create tables, FTS5, knowledge graph schema (idempotent)."""
+    _ensure_entities_file()
     c = conn(agent)
     cur = c.execute("PRAGMA table_info(entries)")
     cols = {r[1] for r in cur.fetchall()}
@@ -557,7 +559,8 @@ def extract_entities(text: str) -> list:
         return []
     text_lower = text.lower()
     found: dict = {}
-    for name, (etype, desc) in PRESET_ENTITIES.items():
+    preset = _load_entities()
+    for name, (etype, desc) in preset.items():
         if name in text_lower:
             for variant in [name, name.upper(), name.capitalize()]:
                 if variant in text or variant in text_lower:
@@ -577,7 +580,7 @@ def extract_entities(text: str) -> list:
             if name_lower.replace(".", "").replace("-", "").isdigit():
                 continue
             if re.search(r"[\u4e00-\u9fff]{2,}", name_lower) and default_type != "other":
-                if not re.match(r"^[\u4e00-\u9fff]+$", name_lower) and name_lower not in PRESET_ENTITIES:
+                if not re.match(r"^[\u4e00-\u9fff]+$", name_lower) and name_lower not in preset:
                     continue
             if re.match(r"^[\u4e00-\u9fff]+\w", name_lower):
                 continue

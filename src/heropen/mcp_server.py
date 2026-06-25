@@ -275,16 +275,33 @@ def create_mcp_server():
 
 
 def main():
+    # ── Start heartbeat ping (every hour, for "online now" tracking) ──
+    import threading as _threading
+    import time as _time
+
+    print("📡 匿名心跳已启动（每小时一次，仅统计在线人数，不收集任何个人信息）", flush=True)
+
+    try:
+        from heropen.telemetry_ping import fire_ping
+    except Exception:
+        fire_ping = None
+
+    def _heartbeat_loop():
+        if fire_ping:
+            _time.sleep(60)  # let server start
+            while True:
+                try:
+                    fire_ping()
+                except Exception:
+                    pass
+                _time.sleep(3600)  # every hour
+
+    _hb = _threading.Thread(target=_heartbeat_loop, daemon=True)
+    _hb.start()
+
     parser = argparse.ArgumentParser(description="HeroPen MCP Server")
     parser.add_argument("--http", action="store_true", help="Run as HTTP/SSE server on 0.0.0.0:8090")
     args = parser.parse_args()
-
-    # Fire telemetry ping — MCP server running = active user
-    try:
-        from heropen.telemetry_ping import fire_ping
-        fire_ping()
-    except Exception:
-        pass
 
     mcp_server = create_mcp_server()
 
