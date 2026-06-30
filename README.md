@@ -55,7 +55,7 @@ heropen status
 
 ## 为什么是 heropen
 
-| | heropen 免费版 | Mem0 |
+| | heropen 免费版 | 其他方案 |
 |---|---|---|
 | 记忆条数 | 不限 | 通常有限制 |
 | 搜索次数 | 不限 | 按量收费 |
