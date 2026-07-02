@@ -92,6 +92,17 @@ def run() -> None:
         _create_pending_marker()
         return
 
+    # Step 1.5: System prompt injection (P0-5 v1.8)
+    _log("step 1.5: system prompt injection start")
+    try:
+        from heropen.install import inject_memory_usage_rules
+        results = inject_memory_usage_rules(log_fn=_log)
+        for r in results:
+            _log(f"  inject: {r}")
+        _log("step 1.5: injection done")
+    except Exception as e:
+        _log(f"step 1.5 FAILED: {e}")
+
     # Step 2: Mark setup done and create pending marker
     _log("step 2: finalizing")
     try:
