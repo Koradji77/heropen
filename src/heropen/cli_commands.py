@@ -43,7 +43,7 @@ from heropen.core import (
 def _build_parser(action: str) -> argparse.ArgumentParser:
     """Build a per-command argument parser."""
     p = argparse.ArgumentParser(prog=f"heropen {action}")
-    p.add_argument("--agent", default=None, help="Agent name (default: xiaoman)")
+    p.add_argument("--agent", default=None, help="Agent name (default: agent)")
     return p
 
 
@@ -54,7 +54,7 @@ def _resolve_agent(args: list[str]) -> str:
             return args[i + 1]
         if a.startswith("--agent="):
             return a.split("=", 1)[1]
-    return "xiaoman"
+    return "agent"
 
 
 # ─── Bootstrap / Self-heal ──────────────────────────────────────
@@ -137,9 +137,7 @@ def cmd_auto_setup(args: list[str]) -> None:
     from heropen.auto_mcp import auto_setup_mcp, print_setup_summary
 
     agent = _resolve_agent(args)
-    if agent == "xiaoman":
-        agent = "agent"
-    
+
     print(f"🔧 HeroPen 自动配置中...\n")
     
     # Step 1: Init DB
@@ -160,7 +158,7 @@ def cmd_sync(args: list[str]) -> None:
 
 def cmd_recall(args: list[str]) -> None:
     # Simple arg parsing for recall
-    agent = "xiaoman"
+    agent = "agent"
     query_parts: list[str] = []
     opts = {"fts": False, "graph": False, "date": None, "tag": None, "last": None, "today": False, "limit": 10}
 
@@ -237,7 +235,7 @@ def cmd_recall(args: list[str]) -> None:
 
 
 def cmd_add(args: list[str]) -> None:
-    agent = "xiaoman"
+    agent = "agent"
     section = ""
     content = ""
     tags = ""
@@ -400,7 +398,7 @@ def cmd_export(args: list[str]) -> None:
 
 
 def cmd_import(args: list[str]) -> None:
-    agent = "xiaoman"
+    agent = "agent"
     file_path = ""
 
     i = 0
@@ -476,7 +474,7 @@ def cmd_import(args: list[str]) -> None:
 
 
 def cmd_delete(args: list[str]) -> None:
-    agent = "xiaoman"
+    agent = "agent"
     entry_id: int | None = None
 
     i = 0
@@ -524,7 +522,7 @@ def cmd_delete(args: list[str]) -> None:
 
 
 def cmd_embed(args: list[str]) -> None:
-    agent = "xiaoman"
+    agent = "agent"
     force = False
 
     i = 0
@@ -579,7 +577,7 @@ def cmd_session(args: list[str]) -> None:
     """heropen session check --context "..."
        heropen session recover [--limit 3]
     """
-    agent = "xiaoman"
+    agent = "agent"
     action = ""
     context_summary = ""
     active_task = ""
@@ -658,8 +656,8 @@ def cmd_session(args: list[str]) -> None:
             print("❌ 保存失败")
     else:
         print("用法:")
-        print("  heropen session check   --context \"...\" --task \"...\" [--decisions \"a,b,c\"] [--agent xiaoman]")
-        print("  heropen session recover [--limit 3] [--agent xiaoman]")
+        print("  heropen session check   --context \"...\" --task \"...\" [--decisions \"a,b,c\"] [--agent agent]")
+        print("  heropen session recover [--limit 3] [--agent agent]")
 
 
 # ─── Diagnostics ──────────────────────────────────────────────────
