@@ -4,13 +4,13 @@ build-backend = "hatchling.build"
 
 [project]
 name = "heropen"
-version = "1.8.0"
+version = "1.7.2"
 description = "HeroPen — AI Agent Long-term Memory System"
 readme = "README.md"
 requires-python = ">=3.10"
 license = {text = "MIT"}
 authors = [
-    {name = "KSMN Studio", email = "xiaoman260220@163.com"},
+    {name = "KSMN Studio", email = "hello@ksmn.cc"},
 ]
 classifiers = [
     "Programming Language :: Python :: 3",
@@ -20,7 +20,6 @@ classifiers = [
 
 dependencies = [
     "requests>=2.28",
-    "mcp>=1.6",
 ]
 
 [project.optional-dependencies]
@@ -33,6 +32,7 @@ ui = [
 all = [
     "heropen[embedding]",
     "heropen[ui]",
+    "mcp>=1.6",
 ]
 
 [project.scripts]

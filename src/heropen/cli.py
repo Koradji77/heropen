@@ -2,8 +2,8 @@
 heropen.cli — Command-line interface for HeroPen.
 
 Usage:
+    heropen --help
     heropen install      # new in v1.2.0
-    heropen viewer       # new in v1.7.25
     heropen init ...
     heropen recall ...
     heropen add ...
@@ -15,7 +15,7 @@ from __future__ import annotations
 import sys
 from pathlib import Path
 
-from heropen.core import HERO_PEN_DIR, __version__
+from heropen.core import HERO_PEN_DIR
 
 
 def main():
@@ -116,26 +116,12 @@ def main():
     elif cmd in ("session",):
         from heropen.cli_commands import cmd_session
         cmd_session(args[1:])
-    elif cmd in ("diagnose",):
-        from heropen.cli_commands import cmd_diagnose
-        cmd_diagnose(args[1:])
     elif cmd == "panel":
         from heropen.panel import cmd_panel
         cmd_panel(args[1:])
     elif cmd == "viewer":
         from heropen.viewer_server import main as viewer_main
-        import webbrowser
-        import threading
-        t = threading.Thread(target=viewer_main, daemon=True)
-        t.start()
-        import time; time.sleep(0.5)
-        webbrowser.open("http://127.0.0.1:9020")
-        print("  Press Ctrl+C to stop the viewer server.")
-        try:
-            t.join()
-        except KeyboardInterrupt:
-            print("\n  Viewer stopped.")
-            sys.exit(0)
+        viewer_main()
     else:
         print(f"heropen: unknown command '{cmd}'")
         print_help()
@@ -144,7 +130,7 @@ def main():
 
 def print_help():
     help_text = f"""
-heropen {__version__} — AI Agent Long-term Memory System
+HeroPen v1.4.0 — AI Agent Long-term Memory System
 
 Usage:
     heropen <command> [options]
@@ -171,9 +157,8 @@ Commands:
     delete          Delete a memory entry
     health          Check system health (alias for status)
     session         Save or recover session checkpoint
-    diagnose        Run system diagnostics (config, DB, connectivity, version)
     panel           Launch control panel (GUI/TUI)
-    viewer          Launch Web Viewer (auto-open browser)
+    viewer          Launch web viewer (http://127.0.0.1:9020)
     mcp             Start MCP server
     help            Show this help message
     version         Show version
@@ -181,12 +166,6 @@ Commands:
 Options:
     -h, --help     Show this help message
     -V, --version  Show version
-    --agent NAME   Target a specific agent (default: xiaoman)
-                   Example: heropen recall --agent shishi
-
-Global option --agent can be placed after the command:
-    heropen recall --last 10 --agent shishi
-    heropen status --agent shishi
 
 Data directory: {HERO_PEN_DIR}
 """
