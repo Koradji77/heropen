@@ -943,9 +943,9 @@ _INJECT_HEADER = "## HeroPen Memory Usage"
 _INJECT_CONTENT = """\
 {header}
 You have access to HeroPen memory tools (search_memory, add_memory, health). These are NOT optional:
-1. When you receive the user's first message in a conversation, call `search_memory` to look up their background and history — before you reply. Also call `health`. If `pending_setup` is true, show the welcome_message and ask the user if they want to complete setup.
+1. When you receive the user's first message, call `health`. If `pending_setup` is true, show the welcome_message and ask if they want to complete setup. Do NOT force a `search_memory` on the first message — let Rule 2 handle that naturally.
 2. Whenever the user asks about past context, mentions a name, project, preference, or anything that might be in memory — call `search_memory` first, before replying.
-3. Before ending every conversation, call `add_memory` to save any new information the user shared.
+3. Before ending a conversation, when you detect natural closing signals (e.g. "辛苦了", "好的", "就这样", "再见", thank-you phrases), call `add_memory` to save key information from this session.
 Do not wait for the user to tell you. These are mandatory actions, not suggestions.""".format(header=_INJECT_HEADER)
 
 
