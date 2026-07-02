@@ -18,7 +18,7 @@ from datetime import date, datetime
 
 # ─── Paths ────────────────────────────────────────────────────
 
-__version__ = "1.7.2"
+__version__ = "1.8.0"
 _HPD = os.environ.get("HERO_PEN_DIR", "")
 if _HPD:
     HERO_PEN_DIR = _HPD
@@ -33,16 +33,32 @@ BACKUP_KEEP_REMOTE = 7
 # FREE_AGENT_LIMIT = 2. Change this number?
 # ALL agents share one memory pool. Punishment, not error.
 FREE_AGENT_LIMIT = 2
-FREE_TIER_AGENTS: list[str] = ["xiaoman", "xiaoqin"]
 OVERFLOW_AGENT = "_shared"
 
-AGENTS: dict[str, str] = {
-    "xiaoman": "xiaoman.db",
-    "xiaoqin": "xiaoqin.db",
-    "_shared": "_shared.db",
-    "shishi": "_shared.db",
-    "xiaokai": "_shared.db",
-}
+# ─── Dynamic AGENTS from agent-config.json ─────────────────────
+
+def _load_agents() -> dict[str, str]:
+    """Load agent→db mapping from agent-config.json. Falls back to built-in defaults."""
+    config_path = os.path.join(HERO_PEN_DIR, "agent-config.json")
+    if os.path.exists(config_path):
+        try:
+            import json as _json
+            with open(config_path, encoding="utf-8") as _f:
+                _cfg = _json.load(_f)
+            _agents_list = _cfg.get("agents", [])
+            if _agents_list:
+                return {_a["name"]: f"{_a['name']}.db" for _a in _agents_list if "name" in _a}
+        except Exception:
+            pass
+    return {}
+
+AGENTS: dict[str, str] = _load_agents()
+
+def _free_tier_agents() -> list[str]:
+    """First FREE_AGENT_LIMIT agents from AGENTS (excluding _shared)."""
+    return [k for k in AGENTS if not k.startswith("_")][:FREE_AGENT_LIMIT]
+
+FREE_TIER_AGENTS: list[str] = _free_tier_agents()
 
 os.makedirs(HERO_PEN_DIR, exist_ok=True)
 
@@ -136,14 +152,31 @@ def _resolve_agent(agent: str) -> str:
     """Resolve agent → DB pool. Tamper with FREE_AGENT_LIMIT? Say goodbye to isolation."""
     if FREE_AGENT_LIMIT != 2:  # 🚨 tampering detected → all agents collapse into one pool
         return OVERFLOW_AGENT
-    if agent in FREE_TIER_AGENTS:
+    if agent in _free_tier_agents():
         return agent
     return OVERFLOW_AGENT
 
 
-def db_path(agent: str = "xiaoman") -> str:
-    real = _resolve_agent(agent)
-    return os.path.join(HERO_PEN_DIR, AGENTS.get(real, "xiaoman.db"))
+def get_default_agent() -> str:
+    """Read default agent from agent-config.json, fallback to first key in AGENTS."""
+    import json as _json
+    config_path = os.path.join(HERO_PEN_DIR, "agent-config.json")
+    if os.path.exists(config_path):
+        try:
+            with open(config_path, encoding="utf-8") as _f:
+                _cfg = _json.load(_f)
+            _agents = _cfg.get("agents", [])
+            if _agents:
+                return _agents[0]["name"]
+        except Exception:
+            pass
+    return next(iter(AGENTS.keys()), "_shared")
+
+
+def db_path(agent: str | None = None) -> str:
+    if agent is None:
+        agent = get_default_agent()
+    return os.path.join(HERO_PEN_DIR, f"{agent}.db")
 
 
 # ─── Backup & Recovery ─────────────────────────────────────────
@@ -153,8 +186,10 @@ def ensure_backup_dir() -> None:
     os.chmod(BACKUP_DIR, 0o700)
 
 
-def auto_backup(agent: str = "xiaoman") -> str | None:
+def auto_backup(agent: str | None = None) -> str | None:
     """Copy hero_pen.db → ~/.heropen/backups/, keep last BACKUP_KEEP_LOCAL copies."""
+    if agent is None:
+        agent = get_default_agent()
     try:
         ensure_backup_dir()
         src = db_path(agent)
@@ -176,7 +211,7 @@ def auto_backup(agent: str = "xiaoman") -> str | None:
         return None
 
 
-def integrity_check(agent: str = "xiaoman") -> tuple[bool, str]:
+def integrity_check(agent: str | None = None) -> tuple[bool, str]:
     """PRAGMA integrity_check. Returns (ok, message)."""
     try:
         c = sqlite3.connect(db_path(agent))
@@ -189,8 +224,10 @@ def integrity_check(agent: str = "xiaoman") -> tuple[bool, str]:
         return False, str(e)
 
 
-def db_recovery(agent: str = "xiaoman") -> str | None:
+def db_recovery(agent: str | None = None) -> str | None:
     """Restore from the latest backup. Returns backup path on success."""
+    if agent is None:
+        agent = get_default_agent()
     ensure_backup_dir()
     prefix = f"heropen.{agent}.db."
     backups = sorted(f for f in os.listdir(BACKUP_DIR) if f.startswith(prefix))
@@ -205,7 +242,7 @@ def db_recovery(agent: str = "xiaoman") -> str | None:
     return src if ok else None
 
 
-def startup_self_heal(agent: str = "xiaoman") -> dict:
+def startup_self_heal(agent: str | None = None) -> dict:
     """Check integrity → auto-recover from backup → return status dict."""
     db = db_path(agent)
     if not os.path.exists(db):
@@ -301,12 +338,42 @@ def cosine_similarity(a: list[float], b: list[float]) -> float:
 
 # ─── Database connection ───────────────────────────────────────
 
-def conn(agent: str = "xiaoman") -> sqlite3.Connection:
+def conn(agent: str | None = None) -> sqlite3.Connection:
+    if agent is None:
+        agent = get_default_agent()
     c = sqlite3.connect(db_path(agent))
     c.row_factory = sqlite3.Row
     c.execute("PRAGMA journal_mode=WAL")
     c.execute("PRAGMA synchronous=OFF")
+    # ATTACH _shared.db for cross-agent search (silent if not exists)
+    if agent != "_shared":
+        _shared_path = os.path.join(HERO_PEN_DIR, "_shared.db")
+        if os.path.exists(_shared_path):
+            try:
+                c.execute(f"ATTACH DATABASE ? AS shared", (_shared_path,))
+            except Exception:
+                pass
     return c
+
+
+# ─── Schema version — NEVER change existing schema, only ADD ──────
+SCHEMA_VERSION = 2
+
+
+def _get_schema_version(c) -> int:
+    """Read schema version from _meta table. Returns 0 if no version set."""
+    try:
+        cur = c.execute("SELECT value FROM _meta WHERE key='schema_version'")
+        row = cur.fetchone()
+        return int(row[0]) if row else 0
+    except Exception:
+        return 0
+
+
+def _set_schema_version(c, version: int) -> None:
+    """Write schema version to _meta table (idempotent)."""
+    c.execute("CREATE TABLE IF NOT EXISTS _meta (key TEXT PRIMARY KEY, value TEXT)")
+    c.execute("INSERT OR REPLACE INTO _meta (key, value) VALUES ('schema_version', ?)", (str(version),))
 
 
 # ─── Init ──────────────────────────────────────────────────────
@@ -323,108 +390,248 @@ ENTITY_PATTERNS = [
 ]
 
 
-def init_db(agent: str = "xiaoman") -> None:
-    """Create tables, FTS5, knowledge graph schema (idempotent)."""
+def init_db(agent: str | None = None) -> None:
+    """Create tables, FTS5, knowledge graph schema (idempotent with schema version).
+
+    ALWAYS auto-backups before touching schema.
+    Schema version stored in _meta table — NEVER delete or alter existing columns.
+    """
+    # 1. Auto-backup before any schema operations
+    auto_backup(agent)
+
     _ensure_entities_file()
     c = conn(agent)
-    cur = c.execute("PRAGMA table_info(entries)")
-    cols = {r[1] for r in cur.fetchall()}
 
-    if not cols:
-        c.executescript("""
-            CREATE TABLE IF NOT EXISTS entries (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
-                entry_date TEXT NOT NULL,
-                section TEXT DEFAULT '',
-                content TEXT NOT NULL,
-                tags TEXT DEFAULT '',
-                source TEXT DEFAULT 'manual',
-                agent TEXT DEFAULT 'xiaoman',
-                embedding BLOB DEFAULT NULL,
-                created_at TEXT DEFAULT (datetime('now','localtime'))
-            );
-            CREATE VIRTUAL TABLE IF NOT EXISTS entries_fts USING fts5(
-                content, tags, section,
-                content='entries', content_rowid='id',
-                tokenize='unicode61'
-            );
-            CREATE TRIGGER IF NOT EXISTS entries_ai AFTER INSERT ON entries BEGIN
-                INSERT INTO entries_fts(rowid, content, tags, section)
-                VALUES (new.id, new.content, new.tags, new.section);
-            END;
-            CREATE TRIGGER IF NOT EXISTS entries_ad AFTER DELETE ON entries BEGIN
-                INSERT INTO entries_fts(entries_fts, rowid, content, tags, section)
-                VALUES ('delete', old.id, old.content, old.tags, old.section);
-            END;
-            CREATE TRIGGER IF NOT EXISTS entries_au AFTER UPDATE ON entries BEGIN
-                INSERT INTO entries_fts(entries_fts, rowid, content, tags, section)
-                VALUES ('delete', old.id, old.content, old.tags, old.section);
-                INSERT INTO entries_fts(rowid, content, tags, section)
-                VALUES (new.id, new.content, new.tags, new.section);
-            END;
-            CREATE TABLE IF NOT EXISTS entities (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
-                name TEXT NOT NULL UNIQUE,
-                entity_type TEXT DEFAULT 'other',
-                description TEXT DEFAULT '',
-                count INTEGER DEFAULT 1
-            );
-            CREATE TABLE IF NOT EXISTS relations (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
-                entity_a TEXT NOT NULL,
-                entity_b TEXT NOT NULL,
-                strength REAL DEFAULT 1.0,
-                UNIQUE(entity_a, entity_b)
-            );
-            CREATE INDEX IF NOT EXISTS idx_entity_name ON entities(name);
-            CREATE INDEX IF NOT EXISTS idx_rel_a ON relations(entity_a);
-            CREATE INDEX IF NOT EXISTS idx_rel_b ON relations(entity_b);
-        """)
-    else:
-        if "embedding" not in cols:
-            c.execute("ALTER TABLE entries ADD COLUMN embedding BLOB DEFAULT NULL")
-        c.executescript("""
-            CREATE VIRTUAL TABLE IF NOT EXISTS entries_fts USING fts5(
-                content, tags, section,
-                content='entries', content_rowid='id',
-                tokenize='unicode61'
-            );
-            CREATE TABLE IF NOT EXISTS entities (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
-                name TEXT NOT NULL UNIQUE,
-                entity_type TEXT DEFAULT 'other',
-                description TEXT DEFAULT '',
-                count INTEGER DEFAULT 1
-            );
-            CREATE TABLE IF NOT EXISTS relations (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
-                entity_a TEXT NOT NULL,
-                entity_b TEXT NOT NULL,
-                strength REAL DEFAULT 1.0,
-                UNIQUE(entity_a, entity_b)
-            );
-        """)
-        for tbl in ["entities", "relations"]:
-            tcur = c.execute(f"PRAGMA table_info({tbl})")
-            tcols = {r[1] for r in tcur.fetchall()}
-            if tbl == "entities" and "description" not in tcols:
-                c.execute("ALTER TABLE entities ADD COLUMN description TEXT DEFAULT ''")
+    version = _get_schema_version(c)
+
+    if version == 0:
+        # Fresh install OR pre-v1 DB upgrade
+        cur = c.execute("PRAGMA table_info(entries)")
+        cols = {r[1] for r in cur.fetchall()}
+
+        if not cols:
+            # Fresh install: create everything
+            c.executescript("""
+                CREATE TABLE IF NOT EXISTS entries (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    entry_date TEXT NOT NULL,
+                    section TEXT DEFAULT '',
+                    content TEXT NOT NULL,
+                    tags TEXT DEFAULT '',
+                    source TEXT DEFAULT 'manual',
+                    agent TEXT DEFAULT NULL,
+                    embedding BLOB DEFAULT NULL,
+                    created_at TEXT DEFAULT (datetime('now','localtime'))
+                );
+                CREATE VIRTUAL TABLE IF NOT EXISTS entries_fts USING fts5(
+                    content, tags, section,
+                    content='entries', content_rowid='id',
+                    tokenize='unicode61'
+                );
+                CREATE TRIGGER IF NOT EXISTS entries_ai AFTER INSERT ON entries BEGIN
+                    INSERT INTO entries_fts(rowid, content, tags, section)
+                    VALUES (new.id, new.content, new.tags, new.section);
+                END;
+                CREATE TRIGGER IF NOT EXISTS entries_ad AFTER DELETE ON entries BEGIN
+                    INSERT INTO entries_fts(entries_fts, rowid, content, tags, section)
+                    VALUES ('delete', old.id, old.content, old.tags, old.section);
+                END;
+                CREATE TRIGGER IF NOT EXISTS entries_au AFTER UPDATE ON entries BEGIN
+                    INSERT INTO entries_fts(entries_fts, rowid, content, tags, section)
+                    VALUES ('delete', old.id, old.content, old.tags, old.section);
+                    INSERT INTO entries_fts(rowid, content, tags, section)
+                    VALUES (new.id, new.content, new.tags, new.section);
+                END;
+                CREATE TABLE IF NOT EXISTS entities (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    name TEXT NOT NULL UNIQUE,
+                    entity_type TEXT DEFAULT 'other',
+                    description TEXT DEFAULT '',
+                    count INTEGER DEFAULT 1
+                );
+                CREATE TABLE IF NOT EXISTS relations (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    entity_a TEXT NOT NULL,
+                    entity_b TEXT NOT NULL,
+                    strength REAL DEFAULT 1.0,
+                    UNIQUE(entity_a, entity_b)
+                );
+                CREATE INDEX IF NOT EXISTS idx_entity_name ON entities(name);
+                CREATE INDEX IF NOT EXISTS idx_rel_a ON relations(entity_a);
+                CREATE INDEX IF NOT EXISTS idx_rel_b ON relations(entity_b);
+            """)
+        else:
+            # Pre-v1 DB upgrade: add missing columns/tables
+            if "embedding" not in cols:
+                c.execute("ALTER TABLE entries ADD COLUMN embedding BLOB DEFAULT NULL")
+            c.executescript("""
+                CREATE VIRTUAL TABLE IF NOT EXISTS entries_fts USING fts5(
+                    content, tags, section,
+                    content='entries', content_rowid='id',
+                    tokenize='unicode61'
+                );
+                CREATE TABLE IF NOT EXISTS entities (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    name TEXT NOT NULL UNIQUE,
+                    entity_type TEXT DEFAULT 'other',
+                    description TEXT DEFAULT '',
+                    count INTEGER DEFAULT 1
+                );
+                CREATE TABLE IF NOT EXISTS relations (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    entity_a TEXT NOT NULL,
+                    entity_b TEXT NOT NULL,
+                    strength REAL DEFAULT 1.0,
+                    UNIQUE(entity_a, entity_b)
+                );
+            """)
+            for tbl in ["entities", "relations"]:
+                tcur = c.execute(f"PRAGMA table_info({tbl})")
+                tcols = {r[1] for r in tcur.fetchall()}
+                if tbl == "entities" and "description" not in tcols:
+                    c.execute("ALTER TABLE entities ADD COLUMN description TEXT DEFAULT ''")
+
+        # Mark schema version (v1 base)
+        _set_schema_version(c, 1)
+        version = 1  # re-read so subsequent checks use updated value
+
+    elif version < SCHEMA_VERSION:
+        # ── Schema v1→v2: migrate agents from _shared.db to independent dbs ──
+        if version == 1:
+            _shared_path = os.path.join(HERO_PEN_DIR, "_shared.db")
+            if os.path.exists(_shared_path):
+                try:
+                    _migrate_from_shared_v1(agent)
+                except Exception as exc:
+                    import logging
+                    logging.getLogger("heropen").warning(
+                        "Migration from _shared.db failed for %s: %s",
+                        agent, exc,
+                    )
+        _set_schema_version(c, SCHEMA_VERSION)
+
     c.commit()
     c.close()
 
 
+def _migrate_from_shared_v1(agent: str) -> int:
+    """One-shot v1→v2 migration: move this agent's entries out of _shared.db.
+
+    Only does work if _shared.db has an entries table with rows belonging
+    to *agent*. The migrating agent's target DB must already exist (init_db
+    created it above).  Handles dedup via content prefix check.
+
+    Returns number of entries migrated (0 = nothing to do).
+    """
+    shared_path = os.path.join(HERO_PEN_DIR, "_shared.db")
+    agent_path = db_path(agent)
+    if not os.path.exists(shared_path):
+        return 0
+
+    try:
+        sc = sqlite3.connect(shared_path)
+        sc.row_factory = sqlite3.Row
+        dest_agents = {"shishi", "xiaokai"}  # agents that were pooled into _shared
+    except Exception:
+        return 0
+
+    count = 0
+    try:
+        for mig_agent in dest_agents:
+            rows = sc.execute(
+                "SELECT * FROM entries WHERE agent=? ORDER BY id",
+                (mig_agent,),
+            ).fetchall()
+            if not rows:
+                continue
+            dc = sqlite3.connect(os.path.join(HERO_PEN_DIR, f"{mig_agent}.db"))
+            # Get existing content prefixes for dedup
+            existing = {
+                r[0]
+                for r in dc.execute(
+                    "SELECT substr(content,1,100) FROM entries"
+                ).fetchall()
+            }
+            for row in rows:
+                if row["content"][:100] in existing:
+                    continue
+                dc.execute(
+                    "INSERT INTO entries "
+                    "(entry_date, section, content, tags, source, agent, embedding, created_at) "
+                    "VALUES (?,?,?,?,?,?,?,?)",
+                    (
+                        row["entry_date"],
+                        row["section"],
+                        row["content"],
+                        row["tags"],
+                        row["source"],
+                        mig_agent,
+                        row["embedding"],
+                        row["created_at"],
+                    ),
+                )
+                count += 1
+            dc.commit()
+            dc.close()
+        # Back up _shared.db after successful migration
+        bak = shared_path + ".bak"
+        if not os.path.exists(bak):
+            import shutil
+            shutil.copy2(shared_path, bak)
+    except Exception as exc:
+        import logging
+        logging.getLogger("heropen").warning(
+            "v1→v2 migration for %s failed after %d rows: %s",
+            agent, count, exc,
+        )
+    finally:
+        sc.close()
+
+    if count:
+        import warnings as _w
+        _w.warn(f"🔁 从 _shared.db 自动迁移 {count} 条记忆完成")
+    return count
 # ─── CRUD ──────────────────────────────────────────────────────
+
+def _append_shared(results: list[dict], agent: str) -> list[dict]:
+    """Append entries from _shared.db that aren't already in results (by content prefix)."""
+    if not results or agent == "_shared":
+        return results or []
+    shared_path = os.path.join(HERO_PEN_DIR, "_shared.db")
+    if not os.path.exists(shared_path):
+        return results
+    existing_prefixes = {r.get("content", "")[:80] for r in results}
+    try:
+        sc = sqlite3.connect(shared_path)
+        sc.row_factory = sqlite3.Row
+        shared_rows = [
+            dict(r)
+            for r in sc.execute(
+                "SELECT id, entry_date, section, content, tags, source, created_at FROM entries ORDER BY id DESC"
+            ).fetchall()
+        ]
+        sc.close()
+        for r in shared_rows:
+            if r.get("content", "")[:80] not in existing_prefixes:
+                r["_source"] = "shared"
+                results.append(r)
+    except Exception:
+        pass
+    return results
+
 
 def add_entry(
     entry_date: str,
     content: str,
     section: str = "",
     tags: str = "",
-    agent: str = "xiaoman",
+    agent: str | None = None,
     source: str = "manual",
     embedding: bytes | None = None,
 ) -> int | None:
     """Insert a memory entry. Auto-generates embedding if not provided."""
+    if agent is None:
+        agent = get_default_agent()
     # Prepend time tag to content
     now_str = datetime.now().strftime("%Y-%m-%d %H:%M")
     time_tag = f"[对话时间：{now_str}]"
@@ -514,9 +721,11 @@ def session_recover(agent, limit=1):
     return results
 
 
-def update_entry(entry_id: int, agent: str = "xiaoman", **fields) -> dict | None:
+def update_entry(entry_id: int, agent: str | None = None, **fields) -> dict | None:
     """Update a memory entry. Only non-None fields are changed."""
-    ALLOWED = {"section", "content", "tags", "entry_date", "source", "status"}
+    if agent is None:
+        agent = get_default_agent()
+    ALLOWED = {"section", "content", "tags", "entry_date", "source"}
     updates = {k: v for k, v in fields.items() if k in ALLOWED and v is not None}
     if not updates:
         return None
@@ -544,7 +753,7 @@ def update_entry(entry_id: int, agent: str = "xiaoman", **fields) -> dict | None
     c.commit()
 
     row = c.execute(
-        "SELECT id, entry_date, section, content, tags, source, agent, created_at, status FROM entries WHERE id=?",
+        "SELECT id, entry_date, section, content, tags, source, agent, created_at FROM entries WHERE id=?",
         (entry_id,),
     ).fetchone()
     c.close()
@@ -617,7 +826,7 @@ def search_graph(query: str, limit: int = 5, agent: str | None = None) -> list |
     entities = extract_entities(query)
     if not entities:
         return None
-    c = conn(agent or "xiaoman")
+    c = conn(agent or get_default_agent())
     query_ent_names = [e[0].lower() for e in entities]
     related = set(query_ent_names)
     for ent_name in query_ent_names:
@@ -655,7 +864,7 @@ def search_graph(query: str, limit: int = 5, agent: str | None = None) -> list |
 
 def search_vector(query: str, limit: int = 5, agent: str | None = None) -> list | None:
     """Vector semantic search. Returns None (triggers FTS fallback) when no match or all scores < 0.5."""
-    c = conn(agent or "xiaoman")
+    c = conn(agent or get_default_agent())
     query_emb = get_embedding(query)
     if not query_emb:
         c.close()
@@ -691,7 +900,7 @@ def search_vector(query: str, limit: int = 5, agent: str | None = None) -> list 
 
 
 def search_fts(keywords: list[str], limit: int = 5, agent: str | None = None) -> list:
-    c = conn(agent or "xiaoman")
+    c = conn(agent or get_default_agent())
     params = []
     conditions = []
     for kw in keywords:
@@ -713,7 +922,7 @@ def search_fts(keywords: list[str], limit: int = 5, agent: str | None = None) ->
 
 
 def search_by_date(date_str: str, limit: int = 10, agent: str | None = None) -> list:
-    c = conn(agent or "xiaoman")
+    c = conn(agent or get_default_agent())
     if agent:
         rows = c.execute(
             "SELECT * FROM entries WHERE entry_date=? AND agent=? ORDER BY id DESC LIMIT ?",
@@ -729,7 +938,7 @@ def search_by_date(date_str: str, limit: int = 10, agent: str | None = None) -> 
 
 
 def search_by_tag(tag: str, limit: int = 10, agent: str | None = None) -> list:
-    c = conn(agent or "xiaoman")
+    c = conn(agent or get_default_agent())
     if agent:
         rows = c.execute(
             "SELECT * FROM entries WHERE tags LIKE ? AND agent=? ORDER BY entry_date DESC,id DESC LIMIT ?",
@@ -745,7 +954,7 @@ def search_by_tag(tag: str, limit: int = 10, agent: str | None = None) -> list:
 
 
 def search_recent(limit: int = 10, agent: str | None = None) -> list:
-    c = conn(agent or "xiaoman")
+    c = conn(agent or get_default_agent())
     if agent:
         rows = c.execute(
             "SELECT * FROM entries WHERE agent=? ORDER BY id DESC LIMIT ?", (agent, limit)
@@ -829,13 +1038,42 @@ def search_with_date_filter(
     return results[:limit]
 
 
+def search_shared(agent: str, limit: int = 10) -> list:
+    """Search _shared.db for entries not already in this agent's results.
+    
+    Used by CLI recall/search commands to include team shared knowledge.
+    Returns list of dicts with _source='shared' marker.
+    """
+    shared_path = os.path.join(HERO_PEN_DIR, "_shared.db")
+    if not os.path.exists(shared_path) or agent == "_shared":
+        return []
+    try:
+        sc = sqlite3.connect(shared_path)
+        sc.row_factory = sqlite3.Row
+        rows = [
+            dict(r)
+            for r in sc.execute(
+                "SELECT id, entry_date, section, content, tags, source, agent, created_at FROM entries ORDER BY id DESC LIMIT ?",
+                (limit,),
+            ).fetchall()
+        ]
+        sc.close()
+        for r in rows:
+            r["_source"] = "shared"
+        return rows
+    except Exception:
+        return []
+
+
 # ─── Auto capture ──────────────────────────────────────────────
 
 CAPTURE_USER_TRIGGERS = ["记住", "记一下", "记", "这个重要", "别忘了", "关键", "重点", "结论", "核心", "铁律", "规则", "要记得", "记着"]
 CAPTURE_ASSISTANT_TRIGGERS = ["所以", "结论", "答案是", "总结", "已写入memory", "已记录"]
 
 
-def capture_session_content(text: str, agent: str = "xiaoman") -> int:
+def capture_session_content(text: str, agent: str | None = None) -> int:
+    if agent is None:
+        agent = get_default_agent()
     if not text:
         return 0
     lines = text.split("\n")
@@ -957,7 +1195,9 @@ def parse_diary(filepath: str | None = None) -> list:
     return entries
 
 
-def sync_to_db(agent: str = "xiaoman") -> int:
+def sync_to_db(agent: str | None = None) -> int:
+    if agent is None:
+        agent = get_default_agent()
     entries = parse_diary()
     if not entries:
         return 0
