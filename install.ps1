@@ -1,51 +1,95 @@
-<#
-.SYNOPSIS
-    HeroPen — AI Agent Long-term Memory System 一键安装
-.DESCRIPTION
-    安装 HeroPen 并自动配置，无需手动操作。
-    用法: irm https://ksmn.cc/install.ps1 | iex
-#>
+# HeroPen 一键安装脚本 (Windows PowerShell)
+# 用法: irm ksmn.cc/heropen/install.ps1 | iex
+# 如果执行策略限制: Set-ExecutionPolicy -Scope Process -ExecutionPolicy Bypass
 
-$ErrorActionPreference = "Continue"
+$ErrorActionPreference = "Stop"
 
-# 切 UTF-8 编码
-chcp 65001 > $null
-$host.UI.RawUI.WindowTitle = "HeroPen Install"
+# Force UTF-8 for Chinese console
+$codepage = chcp 65001 2>$null | Out-Null
 
 Write-Host ""
-Write-Host "  *** HeroPen - AI Agent ***" -foreground Cyan
-Write-Host "  =================================" -foreground Cyan
+Write-Host "[ HeroPen - AI 记忆系统 ]" -ForegroundColor Cyan
+Write-Host "  一行安装，开箱即用" -ForegroundColor DarkGray
+Write-Host ("-" * 55)
 Write-Host ""
 
-# 检查 Python
+# -- Step 1: Check Python --
+Write-Host ">> 检查 Python 环境..." -ForegroundColor Cyan
+
+$python = $null
+foreach ($cmd in @("python3", "python")) {
+    try {
+        $ver = & $cmd -c "import sys; print(f'{sys.version_info.major}.{sys.version_info.minor}')" 2>$null
+        if ($ver -and [int]($ver.Split('.')[0]) -ge 3) {
+            $python = $cmd
+            Write-Host "[OK] Python $ver" -ForegroundColor Green
+            break
+        }
+    } catch {}
+}
+
+if (-not $python) {
+    Write-Host "[!] Python 3 未安装，请先安装:" -ForegroundColor Yellow
+    Write-Host "    https://python.org/downloads/" -ForegroundColor Yellow
+    Write-Host "    安装时记得勾选 'Add Python to PATH'" -ForegroundColor Yellow
+    exit 1
+}
+
+# -- Step 2: Install/upgrade HeroPen --
+Write-Host ">> 安装 HeroPen..." -ForegroundColor Cyan
 try {
-    $ver = & python --version 2>&1
-    if ($LASTEXITCODE -ne 0) { throw }
-    Write-Host "  [OK] $ver" -foreground Green
+    & $python -m pip install heropen --upgrade -q
+    Write-Host "[OK] HeroPen 安装完成" -ForegroundColor Green
 } catch {
-    Write-Host "  [FAIL] 未检测到 Python" -foreground Red
-    Write-Host "  请先安装 Python 3.10+：https://www.python.org/downloads/" -foreground Yellow
-    pause; exit 1
+    Write-Host "[FAIL] 安装失败，请检查网络" -ForegroundColor Red
+    exit 1
 }
 
-# 清理 pip 残留
-$pyDir = Split-Path (Get-Command python).Source
-Remove-Item "$pyDir\Lib\site-packages\~*" -Recurse -Force -ErrorAction SilentlyContinue
+# -- Step 3: Launch Viewer --
+Write-Host ""
+Write-Host ("-" * 55)
+Write-Host ">> 启动 Web Viewer..." -ForegroundColor Cyan
 
-# 安装 heropen
-Write-Host "  正在安装 HeroPen..." -foreground Yellow
-& pip install heropen -q 2>&1 | Out-Null
-if ($LASTEXITCODE -ne 0) {
-    Write-Host "  [FAIL] pip 安装失败" -foreground Red
-    Write-Host "  请手动运行：pip install heropen" -foreground Yellow
-    pause; exit 1
+# Try heropen viewer command first
+$viewerProcess = $null
+try {
+    $viewerProcess = Start-Process -FilePath "heropen" -ArgumentList "viewer" -WindowStyle Hidden -PassThru
+} catch {
+    try {
+        $viewerProcess = Start-Process -FilePath "python" -ArgumentList "-m heropen viewer" -WindowStyle Hidden -PassThru
+    } catch {
+        try {
+            $viewerProcess = Start-Process -FilePath "python" -ArgumentList "-c `"import heropen.viewer_server; heropen.viewer_server.main()`"" -WindowStyle Hidden -PassThru
+        } catch {}
+    }
 }
-Write-Host "  [OK] HeroPen 安装成功" -foreground Green
+
+$viewerReady = $false
+if ($viewerProcess) {
+    Start-Sleep -Seconds 2
+    for ($i = 0; $i -lt 12; $i++) {
+        try {
+            $health = Invoke-RestMethod -Uri "http://127.0.0.1:9020/api/health" -ErrorAction Stop
+            $viewerReady = $true
+            break
+        } catch {
+            Start-Sleep -Milliseconds 500
+        }
+    }
+}
 
 Write-Host ""
-Write-Host "  启动配置向导..." -foreground Cyan
+Write-Host ("-" * 55)
+Write-Host "✨ 安装完成！" -ForegroundColor Green
 Write-Host ""
 
-# 运行配置
-Write-Host "  HeroPen 配置完成，请复制下面的文字发给你的 AI 助手`n" -foreground Green
-& heropen
+if ($viewerReady) {
+    Write-Host "  Viewer: http://127.0.0.1:9020  (已启动)" -ForegroundColor Cyan
+    Start-Process "http://127.0.0.1:9020"
+    Write-Host "[OK] 浏览器已自动打开" -ForegroundColor Green
+} else {
+    Write-Host "  启动 Viewer: heropen viewer" -ForegroundColor Cyan
+}
+Write-Host "  升级 Plus: https://ksmn.cc/heropen/" -ForegroundColor Gray
+Write-Host ""
+Write-Host ("-" * 55)

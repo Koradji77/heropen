@@ -576,7 +576,7 @@ def cmd_embed(args: list[str]) -> None:
 # ─── Session Checkpoint & Recovery ──────────────────────────────
 
 def cmd_session(args: list[str]) -> None:
-    """heropen session check --context "..." --task "..." --decisions "a,b,c"
+    """heropen session check --context "..."
        heropen session recover [--limit 3]
     """
     agent = "xiaoman"
@@ -660,3 +660,174 @@ def cmd_session(args: list[str]) -> None:
         print("用法:")
         print("  heropen session check   --context \"...\" --task \"...\" [--decisions \"a,b,c\"] [--agent xiaoman]")
         print("  heropen session recover [--limit 3] [--agent xiaoman]")
+
+
+# ─── Diagnostics ──────────────────────────────────────────────────
+
+def cmd_diagnose(args: list[str]) -> None:
+    """heropen diagnose — run system diagnostics.
+
+    Checks config, database, connectivity, version, and pending setup.
+    Supports --test-agent to simulate a memory search, and --clear-pending
+    to clear the pending_setup marker file.
+    """
+    test_agent = False
+    clear_pending = False
+
+    i = 0
+    while i < len(args):
+        a = args[i]
+        if a == "--test-agent":
+            test_agent = True
+        elif a == "--clear-pending":
+            clear_pending = True
+        i += 1
+
+    # ANSI color helpers
+    _G = "\033[92m"  # green
+    _R = "\033[91m"  # red
+    _Y = "\033[93m"  # yellow
+    _B = "\033[94m"  # blue
+    _N = "\033[0m"   # reset
+    _BOLD = "\033[1m"
+
+    def _ok(msg: str) -> None:
+        print(f"  {_G}✅{_N} {msg}")
+
+    def _fail(msg: str) -> None:
+        print(f"  {_R}❌{_N} {msg}")
+
+    def _warn(msg: str) -> None:
+        print(f"  {_Y}⚠️{_N} {msg}")
+
+    print(f"\n{_BOLD}🔍 HeroPen 系统诊断{_N}\n")
+    print(f"{_B}── 配置检查 ──{_N}")
+
+    # ── 1. MCP config ────────────────────────────────────────────
+    from pathlib import Path
+    import json as _json
+    config_path = Path.home() / ".heropen" / "agent-config.json"
+    if config_path.exists():
+        try:
+            with open(config_path, encoding="utf-8") as _f:
+                cfg = _json.load(_f)
+            agents_list = cfg.get("agents", [])
+            agent_names = [a["name"] for a in agents_list if "name" in a]
+            _ok(f"agent-config.json 存在且有效 — {len(agent_names)} 个 agent: {', '.join(agent_names)}")
+        except (_json.JSONDecodeError, KeyError, Exception) as e:
+            _fail(f"agent-config.json 格式无效: {e}")
+            return
+    else:
+        _fail("agent-config.json 不存在")
+        _warn("请先运行 heropen install 或 heropen auto-setup")
+        return
+
+    # ── 2. Database connection ───────────────────────────────────
+    print(f"\n{_B}── 数据库连接 ──{_N}")
+    from heropen.core import AGENTS, conn as _conn, db_path
+    import os as _os
+
+    db_ok = False
+    for agent_name in list(AGENTS.keys()):
+        dbp = db_path(agent_name)
+        if not _os.path.exists(dbp):
+            _fail(f"[{agent_name}] 数据库文件不存在: {dbp}")
+            continue
+        try:
+            c = _conn(agent_name)
+            total = c.execute("SELECT COUNT(*) FROM entries").fetchone()[0]
+            c.close()
+            _ok(f"[{agent_name}] {total} 条记录 — {dbp}")
+            db_ok = True
+        except Exception as e:
+            _fail(f"[{agent_name}] 连接失败: {e}")
+
+    if not db_ok:
+        _warn("没有任何数据库可用 — 请运行 heropen init <agent>")
+
+    # ── 3. Tool connectivity (MCP server module check) ─────────────
+    print(f"\n{_B}── 工具连通性 ──{_N}")
+    try:
+        # Just check that the module can be imported and parsed
+        import importlib as _il
+        _il.import_module("heropen.mcp_server")
+        _ok("MCP server 模块加载正常 — heropen.mcp_server 可导入")
+    except Exception as e:
+        _fail(f"MCP server 模块加载失败: {e}")
+        _warn("通常意味着缺少依赖 (mcp 包)。运行: pip install mcp")
+
+    # ── 4. Version check ─────────────────────────────────────────
+    print(f"\n{_B}── 版本检查 ──{_N}")
+    current = __version__
+    print(f"    当前版本: {current}")
+    try:
+        import urllib.request as _ur
+        import json as _json
+        # Use PyPI JSON API with a timeout
+        req = _ur.Request(
+            "https://pypi.org/pypi/heropen/json",
+            headers={"User-Agent": "heropen-diagnose/1.0"},
+        )
+        with _ur.urlopen(req, timeout=5) as resp:
+            pypi_data = _json.loads(resp.read().decode("utf-8"))
+        latest = pypi_data["info"]["version"]
+        if latest == current:
+            _ok(f"heropen {current} — 已是最新版本")
+        else:
+            # Compare version tuples
+            def _parse_ver(v: str) -> tuple:
+                try:
+                    return tuple(int(x) for x in v.split("."))
+                except Exception:
+                    return (0,)
+            if _parse_ver(current) > _parse_ver(latest):
+                _ok(f"PyPI: {latest} | 本地: {current} — 本地版本更新于 PyPI")
+            else:
+                _warn(f"PyPI: {latest} | 本地: {current} — 有可用更新。运行: pip install --upgrade heropen")
+    except Exception as e:
+        _warn(f"无法检查 PyPI 版本: {e}")
+
+    # ── 5. Pending setup marker ──────────────────────────────────
+    print(f"\n{_B}── 待办标记 ──{_N}")
+    from heropen.mcp_server import _check_pending_setup
+    pending = _check_pending_setup(clear=clear_pending)
+
+    if pending.get("pending_setup"):
+        installed_at = pending.get("installed_at", "")
+        version = pending.get("version", "")
+        agent_done = pending.get("agent_completed", False)
+        _warn("pending_setup 标记存在")
+        if installed_at:
+            print(f"    安装时间: {installed_at}")
+        if version:
+            print(f"    安装版本: {version}")
+        if not agent_done:
+            print(f"    agent 配置: 未完成")
+        if clear_pending:
+            _ok("已清除 pending_setup 标记")
+        else:
+            print(f"    提示: 使用 --clear-pending 可清除此标记")
+    else:
+        _ok("无 pending_setup 标记")
+
+    # ── 6. --test-agent: simulate memory search ──────────────────
+    if test_agent:
+        print(f"\n{_B}── Agent 模拟测试 --test-agent ──{_N}")
+        try:
+            from heropen.core import search_recent, get_default_agent
+            agent = get_default_agent()
+            results = search_recent(3)
+            if results:
+                _ok(f"[{agent}] 最近3条记忆查询成功 ({len(results)} 条)")
+                for r in results[:3]:
+                    sec = r.get("section", "") or ""
+                    content = (r.get("content", "") or "")[:60]
+                    print(f"      [{sec}] {content}")
+            else:
+                _warn(f"[{agent}] 数据库为空，无记忆可查")
+        except Exception as e:
+            _fail(f"记忆搜索测试失败: {e}")
+
+    # ── Summary ──────────────────────────────────────────────────
+    print(f"\n{_BOLD}诊断完成{_N}")
+

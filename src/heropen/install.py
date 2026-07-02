@@ -719,19 +719,11 @@ def _install_plain() -> None:
     """Fallback install wizard without rich."""
     _print_banner(use_rich=False)
 
-    # Check for existing config
+    # If already configured, skip the wizard — just upgrade the package
     if _config_exists():
-        print("⚠️  检测到已有配置：")
-        try:
-            with open(AGENT_CONFIG_PATH, "r", encoding="utf-8") as f:
-                existing = json.load(f)
-            for a in existing.get("agents", []):
-                print(f"     - {a['name']} ({a.get('edition', 'basic')} 版)")
-        except Exception:
-            pass
-        if not _confirm_overwrite():
-            print("已取消。")
-            return
+        print("✅ 已有配置，跳过设置向导。")
+        print("   打开 viewer 查看新功能：heropen viewer")
+        return
 
     # Step 1: Scan
     print("🔍 正在扫描本机 AI 助手...")
@@ -829,19 +821,11 @@ def _install_with_rich() -> None:
 
     console = Console()
 
-    # Check for existing config
+    # If already configured, skip the wizard — just upgrade the package
     if _config_exists():
-        console.print("\n[yellow]⚠️  检测到已有配置。[/yellow]")
-        try:
-            with open(AGENT_CONFIG_PATH, "r", encoding="utf-8") as f:
-                existing = json.load(f)
-            for a in existing.get("agents", []):
-                console.print(f"     - {a['name']} ([dim]{a.get('edition', 'basic')} 版[/dim])")
-        except Exception:
-            pass
-        if not _confirm_overwrite():
-            console.print("[dim]已取消。[/dim]")
-            return
+        console.print("\n[green]✅ 已有配置，跳过设置向导。[/green]")
+        console.print("[dim]   打开 viewer 查看新功能：heropen viewer[/dim]")
+        return
 
     _print_banner(use_rich=True)
 
@@ -944,13 +928,10 @@ def _install_with_rich() -> None:
 
     for i, agent_cfg in enumerate(config.agents, 1):
         text = _build_identity_text(agent_cfg, edition, len(config.agents))
-        panel = Panel(
-            text,
-            title=f"[bold cyan]{i}. {agent_cfg['name']}[/bold cyan]",
-            border_style="green",
-            box=rich.box.ROUNDED,
-        )
-        console.print(panel)
+        # Use plain text (not Panel) to avoid CJK + box-drawing width glitches on Windows
+        console.print(f"\n[bold cyan]─── [{i}] {agent_cfg['name']} [/bold cyan]")
+        console.print(text)
+        console.print()
 
     console.rule("[bold]✓ 配置完成[/bold]")
     console.print("[dim]助手收到后把那段文字存进长期记忆即可。[/dim]")

@@ -14,6 +14,7 @@ import argparse
 import json
 import sys
 import os
+from pathlib import Path
 
 # Ensure ~/.heropen exists
 os.makedirs(os.path.expanduser("~/.heropen"), exist_ok=True)
@@ -22,6 +23,7 @@ from heropen.core import (
     AGENTS,
     add_entry,
     conn,
+    get_default_agent,
     search_vector,
     search_fts,
     update_entry,
@@ -30,6 +32,35 @@ from heropen.core import (
 from heropen.core import session_checkpoint as _core_checkpoint
 from heropen.core import session_recover as _core_recover
 from heropen import __version__
+
+# Record startup version for staleness detection
+_STARTUP_VERSION = __version__
+
+# Marker file path for pending setup
+_MARKER_PATH = Path.home() / ".heropen" / ".pending_setup"
+
+
+def _check_pending_setup(clear: bool = False) -> dict:
+    """Check or clear the pending setup marker file."""
+    if clear and _MARKER_PATH.exists():
+        _MARKER_PATH.unlink()
+        return {"pending_setup": False}
+
+    if _MARKER_PATH.exists():
+        try:
+            data = json.loads(_MARKER_PATH.read_text())
+        except (json.JSONDecodeError, OSError):
+            data = {}
+        return {
+            "pending_setup": True,
+            "installed_at": data.get("installed_at", ""),
+            "version": data.get("version", ""),
+            "agent_completed": data.get("agent_completed", False),
+            "welcome_message": "I noticed you just installed HeroPen memory system! "
+                               "Would you like me to set it up for you? It takes about 30 seconds.",
+        }
+
+    return {"pending_setup": False}
 
 
 def _compute_time_gap(results: list) -> float | None:
@@ -60,17 +91,29 @@ def create_mcp_server():
         if _r["status"] == "recovered":
             _recovered += 1
     if _recovered > 0:
-        print(f"🔄 HeroPen 启动自愈: 恢复 {_recovered} 个 agent 的记忆库", flush=True)
+        print(f"🔄 HeroPen 启动自愈: 恢复 {_recovered} 个 agent 的记忆库", file=sys.stderr, flush=True)
 
     @mcp.tool()
     def search_memory(
         query: str,
         limit: int = 5,
-        agent: str = "xiaoman",
+        agent: str | None = None,
         date_from: str = "",
         date_to: str = "",
     ) -> str:
-        """Search HeroPen memory database (vector → FTS → LIKE)."""
+        """搜索用户的长期记忆。在以下情况必须调用：
+- 对话开始时，了解用户背景和历史
+- 用户提到人名、项目名、偏好等关键词时
+- 用户询问"还记得吗"或类似问题时
+不要等用户要求才搜索。主动搜索能让你更懂用户。三层回退：向量 → 全文 → 模糊匹配。
+
+        Args:
+            query: Keywords to search for. Use the user's own words or inferred topics.
+            limit: Max results (1-20, default 5).
+            agent: Which agent's memory to search (default: auto).
+            date_from: Only return entries on or after this date (YYYY-MM-DD).
+            date_to: Only return entries on or before this date (YYYY-MM-DD).
+        """
         limit = min(limit, 20)
         results = search_vector(query, limit, agent)
         method = "vector"
@@ -123,6 +166,17 @@ def create_mcp_server():
                 r["score"] = None
                 r["score_label"] = "关键词匹配"
 
+        # Append entries from _shared.db for cross-agent knowledge
+        try:
+            from heropen.core import search_shared
+            shared_results = search_shared(agent or get_default_agent(), limit)
+            existing_contents = {r.get("content", "")[:80] for r in results if r.get("content")}
+            for sr in shared_results:
+                if sr.get("content", "")[:80] not in existing_contents:
+                    results.append(sr)
+        except Exception:
+            pass
+
         return json.dumps(
             {"method": method, "count": len(results), "results": results[:limit], "time_gap_hours": _compute_time_gap(results)},
             ensure_ascii=False,
@@ -133,10 +187,22 @@ def create_mcp_server():
         section: str,
         content: str,
         tags: str = "",
-        agent: str = "xiaoman",
+        agent: str | None = None,
         entry_date: str = "",
     ) -> str:
-        """Add a new memory entry to hero_pen."""
+        """保存信息到用户的长期记忆。在以下情况必须调用：
+- 用户分享了新的偏好、习惯、约定、项目信息
+- 对话中产生了需要后续跟进的事项
+- 对话即将结束时，保存本次产生的关键信息
+优先主动保存，不要等用户说"记住这个"。content 上限 5000 字。
+
+        Args:
+            section: Category/topic for this memory (e.g. '用户偏好', '项目状态', '对话记录').
+            content: The information to remember (max 5000 chars). Write it clearly so future you can understand it.
+            tags: Comma-separated keywords for better search.
+            agent: Which agent's memory to write to (default: auto).
+            entry_date: Date for this entry (YYYY-MM-DD, default: today).
+        """
         from datetime import date
         ed = entry_date if entry_date else date.today().isoformat()
         entry_id = add_entry(
@@ -154,12 +220,11 @@ def create_mcp_server():
     @mcp.tool()
     def update_memory(
         entry_id: int,
-        agent: str = "xiaoman",
+        agent: str | None = None,
         section: str | None = None,
         content: str | None = None,
         tags: str | None = None,
         entry_date: str | None = None,
-        status: str | None = None,
     ) -> str:
         """Update an existing memory entry. Only provided fields are changed."""
         fields = {}
@@ -171,8 +236,6 @@ def create_mcp_server():
             fields["tags"] = tags
         if entry_date is not None:
             fields["entry_date"] = entry_date
-        if status is not None:
-            fields["status"] = status
 
         result = update_entry(entry_id, agent, **fields)
         if result:
@@ -184,14 +247,19 @@ def create_mcp_server():
         )
 
     @mcp.tool()
-    def list_memory(limit: int = 10, agent: str = "xiaoman") -> str:
-        """List recent memory entries."""
+    def list_memory(limit: int = 10, agent: str | None = None) -> str:
+        """列出用户的记忆列表。用于概览已有记忆、检查冗余、了解记忆总量。
+
+        Args:
+            limit: How many recent entries to show (max 50, default 10).
+            agent: Which agent's memories to list.
+        """
         c = conn(agent)
         total = c.execute("SELECT COUNT(*) FROM entries").fetchone()[0]
         rows = [
             dict(r)
             for r in c.execute(
-                "SELECT id, entry_date, section, content, tags, source, status, created_at FROM entries ORDER BY id DESC LIMIT ?",
+                "SELECT id, entry_date, section, content, tags, source, created_at FROM entries ORDER BY id DESC LIMIT ?",
                 (min(limit, 50),),
             ).fetchall()
         ]
@@ -201,29 +269,85 @@ def create_mcp_server():
         return json.dumps({"total_count": total, "count": len(rows), "results": rows}, ensure_ascii=False)
 
     @mcp.tool()
-    def health() -> str:
-        """Health check with per-agent memory stats and recent topics."""
+    def health(clear_pending: bool = False) -> str:
+        """Check HeroPen system health and connection status. Call this when you start up to verify everything is working. If pending_setup is true, it means HeroPen was just installed — show the welcome_message to the user and ask if they'd like to complete the setup.
+        
+        Args:
+            clear_pending: Set to true after completing initial setup to clear the pending marker.
+        """
+        # Check pending setup marker
+        pending = _check_pending_setup(clear=clear_pending)
+
         stats = {}
+        db_connected = True
+        mcp_config_found = True
+        issues = []
+        total_memory = 0
+        last_memory_at = ""
+
         for agent in list(AGENTS.keys()):
             try:
                 c = conn(agent)
                 total = c.execute("SELECT COUNT(*) FROM entries").fetchone()[0]
+                last = c.execute(
+                    "SELECT created_at FROM entries ORDER BY id DESC LIMIT 1"
+                ).fetchone()
                 recent = c.execute(
                     "SELECT section FROM entries WHERE section != '' ORDER BY id DESC LIMIT 3"
                 ).fetchall()
                 c.close()
+                last_memory = last[0] if last else ""
+                if last_memory and last_memory > last_memory_at:
+                    last_memory_at = last_memory
+                total_memory += total
                 recent_topics = [r["section"] for r in recent if r["section"]]
                 stats[agent] = {"entries": total, "recent_topics": recent_topics}
             except Exception:
                 stats[agent] = {"entries": 0, "recent_topics": []}
+                db_connected = False
+                issues.append(f"database connection failed for {agent}")
 
-        return json.dumps(
-            {"status": "ok", "server": "hero-pen-mcp", "version": __version__, "agents": stats},
-            ensure_ascii=False,
-        )
+        # Check MCP config
+        agent_config = Path.home() / ".heropen" / "agent-config.json"
+        if not agent_config.exists():
+            mcp_config_found = False
+            issues.append("MCP configuration file not found")
+
+        version_stale = None
+        import importlib.metadata as _ilm
+        try:
+            _current = _ilm.version("heropen")
+            if _current != _STARTUP_VERSION:
+                version_stale = {"startup": _STARTUP_VERSION, "current": _current}
+        except Exception:
+            pass
+
+        result = {
+            "status": "ok" if (db_connected and mcp_config_found) else "degraded",
+            "server": "hero-pen-mcp",
+            "version": __version__,
+            "version_stale": version_stale,
+            "agents": stats,
+            "db_connected": db_connected,
+            "mcp_config_found": mcp_config_found,
+            "memory_count": total_memory,
+            "last_memory_at": last_memory_at,
+        }
+
+        # Merge in pending setup fields
+        result.update(pending)
+        if issues:
+            result["issues"] = issues
+            if pending.get("pending_setup") and not result.get("welcome_message"):
+                result["welcome_message"] = (
+                    "HeroPen is installed but has some configuration issues. "
+                    "Would you like me to help diagnose them?"
+                )
+
+        return json.dumps(result, ensure_ascii=False)
 
     @mcp.tool()
-    def session_checkpoint(agent: str = "xiaoman", context_summary: str = "",
+    def session_checkpoint(agent: str | None = None, context_summary: str = "",
                            active_task: str = "", key_decisions: str = "",
                            tags: str = "") -> str:
         """Save a session checkpoint. Call periodically during long conversations
@@ -249,7 +373,7 @@ def create_mcp_server():
         return json.dumps({"ok": False, "error": "Checkpoint save failed"}, ensure_ascii=False)
 
     @mcp.tool()
-    def session_recover(agent: str = "xiaoman", limit: int = 1) -> str:
+    def session_recover(agent: str | None = None, limit: int = 1) -> str:
         """Recover the most recent session checkpoint(s). Use after context
         compression or agent restart to pick up where you left off.
         
@@ -275,29 +399,14 @@ def create_mcp_server():
 
 
 def main():
-    # ── Start heartbeat ping (every hour, for "online now" tracking) ──
-    import threading as _threading
-    import time as _time
-
-    print("📡 匿名心跳已启动（每小时一次，仅统计在线人数，不收集任何个人信息）", flush=True)
+    # ── Start 60s heartbeat for real-time online tracking ──
+    from heropen.telemetry_ping import start_heartbeat
 
     try:
-        from heropen.telemetry_ping import fire_ping
+        start_heartbeat()
+        print("📡 匿名心跳已启动（每60秒一次，仅统计在线人数，不收集任何个人信息）", file=sys.stderr, flush=True)
     except Exception:
-        fire_ping = None
-
-    def _heartbeat_loop():
-        if fire_ping:
-            _time.sleep(60)  # let server start
-            while True:
-                try:
-                    fire_ping()
-                except Exception:
-                    pass
-                _time.sleep(3600)  # every hour
-
-    _hb = _threading.Thread(target=_heartbeat_loop, daemon=True)
-    _hb.start()
+        print("⚠️ 心跳启动失败，不影响 MCP server 运行", file=sys.stderr, flush=True)
 
     parser = argparse.ArgumentParser(description="HeroPen MCP Server")
     parser.add_argument("--http", action="store_true", help="Run as HTTP/SSE server on 0.0.0.0:8090")
@@ -306,7 +415,7 @@ def main():
     mcp_server = create_mcp_server()
 
     if args.http:
-        print(f"🚀 HeroPen MCP Server (SSE) listening on 0.0.0.0:8090", flush=True)
+        print(f"🚀 HeroPen MCP Server (SSE) listening on 0.0.0.0:8090", file=sys.stderr, flush=True)
         mcp_server.run(transport="sse")
     else:
         mcp_server.run(transport="stdio")
