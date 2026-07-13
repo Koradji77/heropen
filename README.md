@@ -4,9 +4,9 @@
 
 ## 为什么叫 heropen
 
-名字来自两个地方：**her** 取自 Hermes（你阅读这里用的 Agent），**pen** 取自 Open（OpenClaw，开放）。合起来就是 heropen。
+名字来自两个地方：**her** 取自 Hermes（你阅读这里用的 Agent），**open** 取自 OpenClaw（开放）。her + open 拼在一起，就是 heropen。
 
-hero 也撞上了漫威的超级英雄——一个记住你、替你写下的伙伴。
+heropen 一写出来，第一眼就看到 **hero**——撞上漫威超级英雄的情节。它也是一个记住你、替你写下的伙伴。
 
 ## 安装
 
