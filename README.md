@@ -75,8 +75,8 @@ heropen diagnose
 
 ## 链接
 
-- 主页: [ksmn.cc/heropen](https://ksmn.cc/heropen)
-- 文档: [ksmn.cc/heropen/docs](https://ksmn.cc/heropen/docs)
+- 主页: [heropen.net](https://heropen.net)
+- 文档: [heropen.net/heropen/docs](https://heropen.net/heropen/docs)
 - GitHub: [github.com/Koradji77/heropen](https://github.com/Koradji77/heropen)
 
 ## License
