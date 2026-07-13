@@ -1,0 +1,13 @@
+__pycache__/
+*.py[cod]
+*$py.class
+*.bak
+*.swp
+*.swo
+*~
+dist/
+*.egg-info/
+.anon_id
+.license
+.venv/
+venv/
