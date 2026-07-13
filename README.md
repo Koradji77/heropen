@@ -1,44 +1,44 @@
 # heropen
 
-> 让 AI Agent 拥有长期记忆。数据不出本机，搜索不用 token。
+> Give your AI agent long-term memory. Data stays on your machine; search costs zero tokens.
 
-## 为什么叫 heropen
+## Why "heropen"
 
-名字来自两个地方：**her** 取自 Hermes（你阅读这里用的 Agent），**open** 取自 OpenClaw（开放）。her + open 拼在一起，就是 heropen。
+The name comes from two places: **her** from Hermes (the agent you are reading this with), **open** from OpenClaw (openness). her + open put together is heropen.
 
-heropen 一写出来，第一眼就看到 **hero**——撞上漫威超级英雄的情节。它也是一个记住你、替你写下的伙伴。
+Written out, heropen starts with **hero** — evoking the Marvel superhero trope. It is also a companion that remembers you and writes things down for you.
 
-## 安装
+## Install
 
 ```bash
 pip install heropen
 ```
 
-重启你的 Agent。仅此而已。
+Restart your agent. That's it.
 
-首次启动自动检测 Agent（Claude Code, Cursor, Windsurf 或任何 MCP 客户端），配置数据库并注册记忆工具。你的 Agent 会注意到新安装并引导你完成设置。
+On first launch it auto-detects your agent (Claude Code, Cursor, Windsurf, or any MCP client), sets up the database, and registers the memory tools. Your agent will notice the new install and walk you through setup.
 
-## 30 秒开箱
+## 30-second quickstart
 
 ```bash
-# 保存一条记忆
-heropen add "项目使用 FastAPI + SQLAlchemy，测试用 pytest"
+# Save a memory
+heropen add "Project uses FastAPI + SQLAlchemy, tests with pytest"
 
-# 搜索记忆
-heropen search "项目技术栈"
+# Search memories
+heropen search "project tech stack"
 
-# 查看状态
+# Check status
 heropen status
 
-# 诊断问题
+# Diagnose issues
 heropen diagnose
 ```
 
-## 连接你的 Agent（MCP）
+## Connect your agent (MCP)
 
-支持任何兼容 MCP 的 Agent。v1.8+ 自动检测并配置——无需手动操作。
+Works with any MCP-compatible agent. v1.8+ auto-detects and configures — no manual steps.
 
-或者手动加到你的 Agent 配置：
+Or add it manually to your agent config:
 
 ```json
 {
@@ -51,32 +51,32 @@ heropen diagnose
 }
 ```
 
-重启 Agent，它就有记忆了。遇到 bug 存一次，跨会话永久记住。
+Restart your agent and it has memory. Store a bug fix once, remember it permanently across sessions.
 
-## 隐私承诺
+## Privacy promise
 
-**数据不出本机。无遥测。无心跳上报。** 所有记忆存储在本地 SQLite 数据库中。向量检索默认调用 SiliconFlow embedding API（使用你的密钥），记忆文本仅用于生成向量，不上报。也支持纯本地 embedding（fastembed 可选依赖，`pip install heropen[embedding]`）。
+**Data stays on your machine. No telemetry. No heartbeat pings.** All memory is stored in a local SQLite database. Vector search calls the SiliconFlow embedding API by default (using your own key); memory text is only used to generate vectors and is never reported. Local embedding is also supported (fastembed optional dependency, `pip install heropen[embedding]`).
 
-## 开源范围
+## Open-source scope
 
-免费版全量开源（Apache-2.0），商业层（Plus/Enterprise）闭源。
+The free edition is fully open source (Apache-2.0). The commercial layer (Plus / Enterprise) is closed source.
 
-## 为什么选 heropen
+## Why heropen
 
-| | heropen（免费） | 其他方案 |
+| | heropen (free) | other solutions |
 |---|---|---|
-| 存储空间 | 无限制 | 通常有上限 |
-| 搜索次数 | 无限制 | 按次计费 |
-| 需要联网 | 否 | 是 |
-| 数据归属 | 你的机器 | 他们的服务器 |
-| 安装 | `pip install` 一条命令 | 服务器 + 配置 |
+| Storage | unlimited | usually capped |
+| Searches | unlimited | pay per query |
+| Needs network | no | yes |
+| Data ownership | your machine | their servers |
+| Install | one `pip install` | server + config |
 
-免费 = 完整核心功能。没有功能阉割。
+Free = full core features. No crippled functionality.
 
-## 链接
+## Links
 
-- 主页: [heropen.net](https://heropen.net)
-- 文档: [heropen.net/heropen/docs](https://heropen.net/heropen/docs)
+- Home: [heropen.net](https://heropen.net)
+- Docs: [heropen.net/heropen/docs](https://heropen.net/heropen/docs)
 - GitHub: [github.com/Koradji77/heropen](https://github.com/Koradji77/heropen)
 
 ## License
