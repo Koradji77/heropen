@@ -1,5 +1,5 @@
 # heropen 一键安装脚本 (Windows PowerShell)
-# 用法: irm ksmn.cc/heropen/install.ps1 | iex
+# 用法: irm heropen.net/heropen/install.ps1 | iex
 # 如果遇到执行策略限制，运行: Set-ExecutionPolicy -Scope Process -ExecutionPolicy Bypass
 
 $ErrorActionPreference = "Stop"
@@ -137,7 +137,7 @@ if ($viewerReady) {
     Write-Host "heropen viewer" -ForegroundColor Cyan
 }
 Write-Host "  升级 Plus:     " -NoNewline
-Write-Host "https://ksmn.cc/heropen/" -ForegroundColor Cyan
+Write-Host "https://heropen.net/heropen/" -ForegroundColor Cyan
 Write-Host ""
 
 # 自动打开浏览器

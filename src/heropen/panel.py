@@ -449,7 +449,7 @@ def run_gui() -> None:
         f"数据目录：{HERO_PEN_DIR}\n\n"
         "MIT License\n"
         "© KSMN Studio — hello@ksmn.cc\n"
-        "https://ksmn.cc/heropen"
+        "https://heropen.net/heropen"
     )
     ttk.Label(tab_about, text=about_text, style="Title.TLabel",
               wraplength=600, justify=tk.LEFT).pack(anchor=tk.W)

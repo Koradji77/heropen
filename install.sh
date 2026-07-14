@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # heropen 一键安装脚本 (macOS / Linux)
-# 用法: curl -sSL ksmn.cc/heropen/install.sh | bash
+# 用法: curl -sSL heropen.net/heropen/install.sh | bash
 set -euo pipefail
 
 RED='\033[0;31m'
@@ -133,7 +133,7 @@ if [ "$VIEWER_READY" = true ]; then
 else
     printf "  启动 Viewer: ${CYAN}heropen viewer${NC}\n"
 fi
-printf "  升级 Plus: ${CYAN}https://ksmn.cc/heropen/${NC}\n"
+printf "  升级 Plus: ${CYAN}https://heropen.net/heropen/${NC}\n"
 echo ""
 
 # 自动打开浏览器

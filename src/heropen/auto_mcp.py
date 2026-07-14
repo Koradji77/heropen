@@ -362,7 +362,7 @@ def print_setup_summary(result: dict) -> None:
     total = len(result["configured"]) + len(result["already_had"]) + len(result["errors"])
     if total == 0:
         print("\u26a0\ufe0f No supported agent config files found.")
-        print(" Manual setup: https://ksmn.cc/setup.html")
+        print(" Manual setup: https://heropen.net/heropen/docs/")
         return
     if result["configured"]:
         print(f"\u2705 Auto-configured {len(result['configured'])} agent(s):")

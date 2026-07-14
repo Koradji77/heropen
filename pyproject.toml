@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "heropen"
-version = "1.8.4"
+version = "1.8.6"
 description = "heropen — AI Agent Long-term Memory System"
 readme = "README.md"
 requires-python = ">=3.10"
@@ -14,7 +14,7 @@ authors = [
 ]
 classifiers = [
     "Programming Language :: Python :: 3",
-    "License :: OSI Approved :: MIT License",
+    "License :: OSI Approved :: Apache Software License",
     "Topic :: Software Development :: Libraries :: Python Modules",
 ]
 
@@ -44,6 +44,6 @@ packages = ["src/heropen"]
 "src/heropen/heropen_auto_setup.pth" = "heropen_auto_setup.pth"
 
 [project.urls]
-Homepage = "https://ksmn.cc/heropen"
-Documentation = "https://ksmn.cc/heropen/docs"
+Homepage = "https://heropen.net"
+Documentation = "https://heropen.net/heropen/docs/"
 Repository = "https://github.com/Koradji77/heropen"
