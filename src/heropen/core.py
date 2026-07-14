@@ -243,30 +243,68 @@ def _get_siliconflow_key() -> str:
     return ""
 
 
+def _get_embedding_config() -> dict | None:
+    """Resolve the remote embedding backend.
+
+    Priority:
+      1. HEROPEN_EMBEDDING_URL — self-hosted / server-side vector search.
+         Point this at YOUR OWN embedding endpoint to avoid any cloud billing.
+         Optional HEROPEN_EMBEDDING_TOKEN for Bearer auth,
+         HEROPEN_EMBEDDING_MODEL to override the model name.
+      2. SILICONFLOW_API_KEY — SiliconFlow cloud (uses YOUR OWN key;
+         bills YOUR account, so only set it if you want cloud embeddings).
+
+    Returns None when no remote backend is configured (caller keeps local).
+    """
+    url = os.environ.get("HEROPEN_EMBEDDING_URL", "").strip()
+    if url:
+        token = os.environ.get("HEROPEN_EMBEDDING_TOKEN", "").strip()
+        model = os.environ.get("HEROPEN_EMBEDDING_MODEL", "").strip() or EMBEDDING_MODEL
+        return {
+            "url": url.rstrip("/") + "/embeddings",
+            "model": model,
+            "token": token,
+            "self_hosted": True,
+        }
+    key = _get_siliconflow_key()
+    if key:
+        return {
+            "url": f"{SILICONFLOW_BASE_URL}/embeddings",
+            "model": EMBEDDING_MODEL,
+            "token": key,
+            "self_hosted": False,
+        }
+    return None
+
+
 def get_embedding(text: str) -> list[float] | None:
-    """Try local fastembed first → SiliconFlow API → None."""
+    """Try local fastembed first → configured remote endpoint → None.
+
+    Remote backend is resolved by _get_embedding_config(): a self-hosted
+    HEROPEN_EMBEDDING_URL takes priority over SiliconFlow (SILICONFLOW_API_KEY).
+    """
     local = _get_local_embedding(text)
     if local:
         return local
-    api_key = _get_siliconflow_key()
-    if not api_key:
+    cfg = _get_embedding_config()
+    if not cfg:
         return None
     try:
         import json
         import urllib.request
 
         body = json.dumps({
-            "model": EMBEDDING_MODEL,
+            "model": cfg["model"],
             "input": text,
             "encoding_format": "float",
         }).encode("utf-8")
+        headers = {"Content-Type": "application/json"}
+        if cfg["token"]:
+            headers["Authorization"] = f"Bearer {cfg['token']}"
         req = urllib.request.Request(
-            f"{SILICONFLOW_BASE_URL}/embeddings",
+            cfg["url"],
             data=body,
-            headers={
-                "Authorization": f"Bearer {api_key}",
-                "Content-Type": "application/json",
-            },
+            headers=headers,
             method="POST",
         )
         with urllib.request.urlopen(req, timeout=10) as resp:

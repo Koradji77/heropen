@@ -55,7 +55,7 @@ Restart your agent and it has memory. Store a bug fix once, remember it permanen
 
 ## Privacy promise
 
-**Data stays on your machine. No telemetry. No heartbeat pings.** All memory is stored in a local SQLite database. Vector search calls the SiliconFlow embedding API by default (using your own key); memory text is only used to generate vectors and is never reported. Local embedding is also supported (fastembed optional dependency, `pip install heropen[embedding]`).
+**Data stays on your machine. No telemetry. No heartbeat pings.** All memory is stored in a local SQLite database. Vector search uses a **local embedding model by default** (fastembed, `pip install heropen[embedding]`) — fully offline, zero cost. Optionally, you can point it at **your own self-hosted embedding endpoint** via the `HEROPEN_EMBEDDING_URL` environment variable (OpenAI-compatible `/embeddings`), so no third-party cloud is ever billed. The SiliconFlow cloud API is only used if you explicitly set `SILICONFLOW_API_KEY` with your own key. Memory text is only used to generate vectors and is never reported.
 
 ## Open-source scope
 
