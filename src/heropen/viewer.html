@@ -547,13 +547,13 @@
   <div class="cards" id="cards"></div>
   <div class="locked-row" id="locked-msg" style="display:none;">
     以上为免费版可用的 2 个 Agent。
-    <a href="https://ksmn.cc/heropen/" target="_blank">升级 Plus 解锁全部 →</a>
+    <a href="https://heropen.net/" target="_blank">升级 Plus 解锁全部 →</a>
   </div>
   <div class="manage-link" id="manage-link" style="display:none;">
     <a href="#" onclick="openAgentSelector();return false;">管理 Agent</a>
   </div>
 
-  <a class="upgrade-plus" href="https://ksmn.cc/heropen/" target="_blank">升级 Plus</a>
+  <a class="upgrade-plus" href="https://heropen.net/" target="_blank">升级 Plus</a>
 
   <!-- Loading / Error state -->
   <div class="state-msg" id="state-msg">连接中…</div>
@@ -842,10 +842,10 @@ function render() {
   const lockedMsg = document.getElementById('locked-msg');
   const manageLink = document.getElementById('manage-link');
   const cur = agentsData._version || '0.0.0';
-  const latest = '1.7.2';
+  const latest = '1.8.6';
 
   if (compareVersions(latest, cur) > 0) {
-    versionEl.innerHTML = `<a class="version update" href="https://ksmn.cc/heropen/" target="_blank">v${latest} 可用</a>`;
+    versionEl.innerHTML = `<a class="version update" href="https://heropen.net/" target="_blank">v${latest} 可用</a>`;
   } else {
     versionEl.textContent = `v${cur}`;
     versionEl.className = 'version';

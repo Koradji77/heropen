@@ -57,6 +57,8 @@ Restart your agent and it has memory. Store a bug fix once, remember it permanen
 
 **Data stays on your machine. No telemetry. No heartbeat pings.** All memory is stored in a local SQLite database. Vector search uses a **local embedding model by default** (fastembed, `pip install heropen[embedding]`) — fully offline, zero cost. Optionally, you can point it at **your own self-hosted embedding endpoint** by setting the `EMBEDDING_ENDPOINT` and `EMBEDDING_API_KEY` environment variables (OpenAI-compatible `/v1/embeddings`), so no third-party cloud is ever billed. Memory text is only used to generate vectors and is never reported.
 
+If neither a local embedding model nor a self-hosted endpoint is configured, search automatically degrades to fast full-text (FTS) matching — still fully offline and zero cost. So `pip install heropen` works with **zero setup**; embeddings only *upgrade* search quality, they never gate basic use.
+
 ## Open-source scope
 
 The free edition is fully open source (Apache-2.0). The commercial layer (Plus / Enterprise) is closed source.
