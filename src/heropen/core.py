@@ -18,7 +18,7 @@ from datetime import date, datetime
 
 # ─── Paths ────────────────────────────────────────────────────
 
-__version__ = "1.8.5"
+__version__ = "1.8.6"
 _HPD = os.environ.get("HERO_PEN_DIR", "")
 if _HPD:
     HERO_PEN_DIR = _HPD
@@ -206,8 +206,6 @@ def startup_self_heal(agent: str | None = None) -> dict:
 # ─── Embedding ─────────────────────────────────────────────────
 
 LOCAL_EMBEDDING_MODEL = "BAAI/bge-small-zh-v1.5"
-SILICONFLOW_BASE_URL = "https://api.siliconflow.cn/v1"
-EMBEDDING_MODEL = "Qwen/Qwen3-Embedding-8B"
 
 
 def _get_local_embedding(text: str) -> list[float] | None:
@@ -227,84 +225,29 @@ def _get_local_embedding(text: str) -> list[float] | None:
         return None
 
 
-def _get_siliconflow_key() -> str:
-    key = os.environ.get("SILICONFLOW_API_KEY", "")
-    if key and len(key) > 5:
-        return key
-    key_file = os.path.expanduser("~/.heropen/.siliconflow_key")
-    if os.path.exists(key_file):
-        try:
-            with open(key_file) as f:
-                key = f.read().strip()
-            if key and len(key) > 5:
-                return key
-        except Exception:
-            pass
-    return ""
+def _call_remote_embedding(text: str) -> list[float] | None:
+    """Call a self-hosted / server-side embedding endpoint via env-config.
 
-
-def _get_embedding_config() -> dict | None:
-    """Resolve the remote embedding backend.
-
-    Priority:
-      1. HEROPEN_EMBEDDING_URL — self-hosted / server-side vector search.
-         Point this at YOUR OWN embedding endpoint to avoid any cloud billing.
-         Optional HEROPEN_EMBEDDING_TOKEN for Bearer auth,
-         HEROPEN_EMBEDDING_MODEL to override the model name.
-      2. SILICONFLOW_API_KEY — SiliconFlow cloud (uses YOUR OWN key;
-         bills YOUR account, so only set it if you want cloud embeddings).
-
-    Returns None when no remote backend is configured (caller keeps local).
+    Set EMBEDDING_ENDPOINT (OpenAI-compatible, e.g. https://your-server)
+    and EMBEDDING_API_KEY to point vector search at YOUR OWN server, so no
+    third-party cloud key is used and nothing bills an external account.
+    Returns None when not configured (caller keeps local fastembed).
     """
-    url = os.environ.get("HEROPEN_EMBEDDING_URL", "").strip()
-    if url:
-        token = os.environ.get("HEROPEN_EMBEDDING_TOKEN", "").strip()
-        model = os.environ.get("HEROPEN_EMBEDDING_MODEL", "").strip() or EMBEDDING_MODEL
-        return {
-            "url": url.rstrip("/") + "/embeddings",
-            "model": model,
-            "token": token,
-            "self_hosted": True,
-        }
-    key = _get_siliconflow_key()
-    if key:
-        return {
-            "url": f"{SILICONFLOW_BASE_URL}/embeddings",
-            "model": EMBEDDING_MODEL,
-            "token": key,
-            "self_hosted": False,
-        }
-    return None
-
-
-def get_embedding(text: str) -> list[float] | None:
-    """Try local fastembed first → configured remote endpoint → None.
-
-    Remote backend is resolved by _get_embedding_config(): a self-hosted
-    HEROPEN_EMBEDDING_URL takes priority over SiliconFlow (SILICONFLOW_API_KEY).
-    """
-    local = _get_local_embedding(text)
-    if local:
-        return local
-    cfg = _get_embedding_config()
-    if not cfg:
+    endpoint = os.environ.get("EMBEDDING_ENDPOINT", "").rstrip("/")
+    api_key = os.environ.get("EMBEDDING_API_KEY", "")
+    if not endpoint or not api_key:
         return None
     try:
         import json
         import urllib.request
-
-        body = json.dumps({
-            "model": cfg["model"],
-            "input": text,
-            "encoding_format": "float",
-        }).encode("utf-8")
-        headers = {"Content-Type": "application/json"}
-        if cfg["token"]:
-            headers["Authorization"] = f"Bearer {cfg['token']}"
+        body = json.dumps({"input": text}).encode("utf-8")
         req = urllib.request.Request(
-            cfg["url"],
+            f"{endpoint}/v1/embeddings",
             data=body,
-            headers=headers,
+            headers={
+                "Authorization": f"Bearer {api_key}",
+                "Content-Type": "application/json",
+            },
             method="POST",
         )
         with urllib.request.urlopen(req, timeout=10) as resp:
@@ -312,6 +255,14 @@ def get_embedding(text: str) -> list[float] | None:
         return data["data"][0]["embedding"]
     except Exception:
         return None
+
+
+def get_embedding(text: str) -> list[float] | None:
+    """Try local fastembed → remote endpoint (env) → None."""
+    local = _get_local_embedding(text)
+    if local:
+        return local
+    return _call_remote_embedding(text)
 
 
 def cosine_similarity(a: list[float], b: list[float]) -> float:
