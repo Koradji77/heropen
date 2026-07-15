@@ -695,6 +695,12 @@ args 改成 ["-m", "heropen", "mcp"]。
 
     print(text)
     print()
+    # 首次运行自动打开本地面板（Plan-C）一次，让用户立刻看到入口
+    try:
+        from heropen.panel import cmd_panel
+        cmd_panel([])
+    except Exception:
+        pass
 
 
 def _print_banner(use_rich: bool = False) -> None:

@@ -155,7 +155,7 @@ Commands:
     health          Check system health (alias for status)
     session         Save or recover session checkpoint
     diagnose        Run system diagnostics (config, DB, connectivity, version)
-    panel           Launch control panel (GUI/TUI)
+    panel           打开本地记忆面板（Plan-C，一条命令）
     viewer          Launch web viewer (http://127.0.0.1:9020)
     mcp             Start MCP server
     help            Show this help message

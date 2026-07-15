@@ -1,7 +1,7 @@
 """
 heropen.panel — heropen 面板。
 
-``heropen panel`` 默认在浏览器中打开 Web 面板（https://heropen.net/heropen/），一条命令直达。
+``heropen panel`` 默认在本地浏览器打开 Plan-C 本地面板（读本机各 agent 的 .db 渲染，数据不出本机、不登录），一条命令直达。
 加 ``--gui`` 启动本地 tkinter 桌面控制面板（版本/升级/Agent 列表）。
 加 ``--tui`` / ``--terminal`` 降级为终端 UI。
 """
@@ -564,8 +564,9 @@ def cmd_panel(args: list[str]) -> None:
     """
     ``heropen panel`` — open the heropen web panel in your browser.
 
-    Default (no flag): opens https://heropen.net/heropen/ in the default browser
-    with a single command.
+    Default (no flag): builds the local Plan-C panel (reads this machine's
+    agent .db files, renders the agent drill-down view) and opens it in the
+    default browser via file:// — no server, no login, data never leaves the machine.
     Use ``--gui`` for the local tkinter control panel (version/upgrade/agents),
     or ``--tui`` / ``--terminal`` for the terminal UI.
     """
@@ -574,18 +575,10 @@ def cmd_panel(args: list[str]) -> None:
     force_gui = any(a in ("--gui",) for a in args)
     force_tui = any(a in ("--tui", "--terminal") for a in args)
 
-    # Default: one command opens the web panel
+    # Default: one command builds + opens the LOCAL Plan-C panel
     if not force_gui and not force_tui:
-        url = "https://heropen.net/heropen/"
-        print(f"🌐 正在打开 heropen 面板：{url}")
-        try:
-            ok = webbrowser.open(url, new=2)
-            if ok:
-                print("✅ 已在浏览器新标签页打开面板。")
-            else:
-                print("⚠️  无法自动打开浏览器，请手动访问：" + url)
-        except Exception:
-            print("🌐  请在浏览器打开面板：" + url)
+        from heropen.panel_gen import build_and_open
+        build_and_open()
         return
 
     if force_gui:
