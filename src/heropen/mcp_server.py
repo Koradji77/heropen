@@ -199,7 +199,15 @@ def build_conversation_primer(agent: str | None = None) -> str:
 
 def create_mcp_server():
     from mcp.server.fastmcp import FastMCP
-    mcp = FastMCP("hero-pen")
+    _PRIMING_INSTRUCTIONS = (
+        "⏱ 时间感知强制约定（heropen）：\n"
+        "在【每一次】对话/会话开场时，你必须先调用 prime_conversation 工具获取「对话前时间上下文」，"
+        "把它作为首批上下文读入，然后再开始回应或与用户寒暄。\n"
+        "原因：heropen 不会自动把时间注入你的 prompt；若不先调 prime_conversation，你将失去时间感"
+        "（典型故障：深夜误说「早上好」、把用户凌晨说的「明天」机械当成字面次日）。\n"
+        "替代路径：若你在开场调用了 search_memory（其返回已内置 time_context），同样满足本约定。"
+    )
+    mcp = FastMCP("hero-pen", instructions=_PRIMING_INSTRUCTIONS)
 
     # ── Startup self-heal: check all agent databases ──
     _all_agents = list(AGENTS.keys())
