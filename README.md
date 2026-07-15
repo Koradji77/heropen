@@ -6,7 +6,7 @@
 
 The name comes from two places: **her** from Hermes (the agent you are reading this with), **open** from OpenClaw (openness). her + open put together is heropen.
 
-Written out, heropen starts with **hero** — evoking the Marvel superhero trope. It is also a companion that remembers you and writes things down for you.
+Written out, heropen starts with **hero** — evoking the Marvel superhero trope. It is a memory layer that remembers you and writes things down for your agent.
 
 ## Install
 
