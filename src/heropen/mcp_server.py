@@ -160,16 +160,19 @@ def build_conversation_primer(agent: str | None = None) -> str:
     ]
 
     crossed_sleep = False
+    different_day = False
     gap_h = None
     if last_at:
         try:
             last_dt = datetime.fromisoformat(last_at)
             delta = now - last_dt
             gap_h = delta.total_seconds() / 3600
-            # 跨睡眠判定：间隔>10h，或上次/本次落在本地睡眠窗口(23:00-07:00)两侧
+            # 跨睡眠判定（精确）：日历日不同，或上次/本次分别落在本地睡眠窗(23:00-07:00)两侧。
+            # 不靠"间隔>10h"裸判——同一天内上午9点→晚上10点的长间隔不应误判为跨睡眠。
+            different_day = last_dt.date() != now.date()
             last_in_sleep = last_dt.hour >= 23 or last_dt.hour < 7
             now_in_sleep = now.hour >= 23 or now.hour < 7
-            if gap_h > 10 or (last_in_sleep != now_in_sleep):
+            if different_day or (last_in_sleep != now_in_sleep):
                 crossed_sleep = True
         except Exception:
             pass
@@ -177,8 +180,10 @@ def build_conversation_primer(agent: str | None = None) -> str:
     if last_at and gap_h is not None:
         last_str = last_at[:16].replace("T", " ")
         lines.append(f"- 距上次对话：{_gap_words(gap_h)}（上次：{last_str}）")
-        if crossed_sleep:
+        if crossed_sleep and different_day:
             lines.append("- 会话连续性：你已休息过（跨睡眠周期），这是新的一天的工作段")
+        elif crossed_sleep and not different_day:
+            lines.append("- 会话连续性：你在睡眠后继续工作（同一日历日，但已跨过睡眠周期）")
         else:
             lines.append("- 会话连续性：与上次在同一清醒工作段内，连续未断")
     else:
