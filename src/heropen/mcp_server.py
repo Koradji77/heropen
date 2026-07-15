@@ -2,7 +2,7 @@
 heropen MCP Server — Expose heropen memory tools via MCP protocol.
 
 Tools:
-  search_memory, add_memory, update_memory, list_memory, health
+  search_memory, prime_conversation, add_memory, update_memory, list_memory, health
 
 Run:
   heropen-mcp                  # stdio (for Hermes native MCP)
@@ -77,6 +77,119 @@ def _compute_time_gap(results: list) -> float | None:
         return round((now - dt).total_seconds() / 3600, 1)
     except Exception:
         return None
+
+
+# ── Pre-conversation Priming（对话前准备阶段：时间感知）────────────
+def _period_label(hour: int) -> str:
+    """把 24h 映射为 8 段中文时段词，供 LLM 寒暄/行为有据。"""
+    if 0 <= hour < 5:
+        return "凌晨"
+    if 5 <= hour < 8:
+        return "早上"
+    if 8 <= hour < 11:
+        return "上午"
+    if 11 <= hour < 13:
+        return "中午"
+    if 13 <= hour < 17:
+        return "下午"
+    if 17 <= hour < 19:
+        return "傍晚"
+    if 19 <= hour < 23:
+        return "晚上"
+    return "深夜"
+
+
+def _gap_words(hours: float) -> str:
+    """把间隔小时数转自然语言（贴合中文口语）。"""
+    if hours < 0.05:
+        return "刚刚"
+    if hours < 1:
+        return f"约 {round(hours * 60)} 分钟前"
+    if hours < 24:
+        return f"约 {round(hours)} 小时前"
+    days = hours / 24
+    if days < 2:
+        return "昨天"
+    if days < 7:
+        return f"约 {round(days)} 天前"
+    if days < 30:
+        return f"约 {round(days / 7)} 周前"
+    return f"约 {round(days / 30)} 个月前"
+
+
+def build_conversation_primer(agent: str | None = None) -> str:
+    """对话前准备阶段：构造自然语言时间上下文，注入 agent 对话。
+
+    解决两类问题：
+    1) 时间裸奔 → LLM 寒暄混乱（如晚上说"早上好"）。
+    2) 相对时间词锚点错位 → 用户凌晨说"明天弄面板"指"醒来后的今天"，
+       不能只按"距上次 N 小时"字面推算（需区分短休息连续 vs 跨睡眠新段）。
+
+    返回纯文本区块，供 host agent 在 system/context 直接读入。
+    零新增 schema（复用 entries.created_at），纯本地计算、不加依赖、零成本。
+    """
+    from datetime import datetime, date
+
+    now = datetime.now()  # 本机本地时区，禁止 server UTC 裸跑
+    agent = agent or get_default_agent()
+
+    last_at = ""
+    today_count = 0
+    try:
+        c = conn(agent)
+        row = c.execute(
+            "SELECT created_at FROM entries ORDER BY id DESC LIMIT 1"
+        ).fetchone()
+        last_at = row[0] if row else ""
+        today = date.today().isoformat()
+        today_count = c.execute(
+            "SELECT COUNT(*) FROM entries WHERE entry_date = ?", (today,)
+        ).fetchone()[0]
+        c.close()
+    except Exception:
+        pass
+
+    weekdays = ["周一", "周二", "周三", "周四", "周五", "周六", "周日"]
+    weekday = weekdays[now.weekday()]
+    period = _period_label(now.hour)
+
+    lines = [
+        "## 对话前时间上下文（heropen 自动生成，供你感知当前状态）",
+        f"- 现在：{now.year}年{now.month}月{now.day}日 {weekday} {now.hour:02d}:{now.minute:02d}（用户本地时区）",
+        f"- 当前时段：{period}",
+    ]
+
+    crossed_sleep = False
+    gap_h = None
+    if last_at:
+        try:
+            last_dt = datetime.fromisoformat(last_at)
+            delta = now - last_dt
+            gap_h = delta.total_seconds() / 3600
+            # 跨睡眠判定：间隔>10h，或上次/本次落在本地睡眠窗口(23:00-07:00)两侧
+            last_in_sleep = last_dt.hour >= 23 or last_dt.hour < 7
+            now_in_sleep = now.hour >= 23 or now.hour < 7
+            if gap_h > 10 or (last_in_sleep != now_in_sleep):
+                crossed_sleep = True
+        except Exception:
+            pass
+
+    if last_at and gap_h is not None:
+        last_str = last_at[:16].replace("T", " ")
+        lines.append(f"- 距上次对话：{_gap_words(gap_h)}（上次：{last_str}）")
+        if crossed_sleep:
+            lines.append("- 会话连续性：你已休息过（跨睡眠周期），这是新的一天的工作段")
+        else:
+            lines.append("- 会话连续性：与上次在同一清醒工作段内，连续未断")
+    else:
+        lines.append("- 距上次对话：首次对话（无历史记录）")
+
+    lines.append(f"- 今日对话轮次：第 {today_count + 1} 次（按本机本地日期计）")
+    lines.append(
+        "- 时间锚点提示：用户口中的「明天/下周」等相对词，请以「今天」为基准日历日推算；"
+        "若你刚跨过睡眠，用户说的「明天」可能指「今天醒来后的工作段」，勿机械按 N 小时后解读。"
+    )
+    return "\n".join(lines)
 
 
 def create_mcp_server():
@@ -178,9 +291,25 @@ def create_mcp_server():
             pass
 
         return json.dumps(
-            {"method": method, "count": len(results), "results": results[:limit], "time_gap_hours": _compute_time_gap(results)},
+            {"method": method, "count": len(results), "results": results[:limit], "time_gap_hours": _compute_time_gap(results), "time_context": build_conversation_primer(agent)},
             ensure_ascii=False,
         )
+
+    @mcp.tool()
+    def prime_conversation(agent: str | None = None) -> str:
+        """对话开始前必须调用：获取当前时间上下文（heropen 自动生成）。
+
+        返回自然语言时间区块，包含：当前本地时间、时段词、距上次对话间隔、
+        是否跨睡眠周期（区分"工作-短休息-工作"与"工作-长休息-继续工作"）、
+        今日对话轮次、以及相对时间词锚点提示。
+
+        把这段文本作为上下文读入，你的寒暄与对"明天/下周"等相对时间的理解才有据可依，
+        不会出现"晚上说早上好"或把用户凌晨说的"明天"误判为字面次日。
+
+        Args:
+            agent: Which agent's context to prime (default: auto).
+        """
+        return build_conversation_primer(agent)
 
     @mcp.tool()
     def add_memory(
