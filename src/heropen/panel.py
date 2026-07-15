@@ -1,14 +1,9 @@
 """
-heropen.panel — heropen 可视化面板（tkinter GUI + TUI 后备）
+heropen.panel — heropen 面板。
 
-通过 ``heropen panel`` 启动。
-跨平台（Windows / macOS / Linux），tkinter 是 Python 内置依赖。
-
-功能：
-  - 查看版本/可用更新
-  - 一键检查更新 + 升级（升级前自动备份 DB）
-  - Agent 列表 + 记忆统计
-  - 无 tkinter 时自动降级为 TUI
+``heropen panel`` 默认在浏览器中打开 Web 面板（https://heropen.net/heropen/），一条命令直达。
+加 ``--gui`` 启动本地 tkinter 桌面控制面板（版本/升级/Agent 列表）。
+加 ``--tui`` / ``--terminal`` 降级为终端 UI。
 """
 
 from __future__ import annotations
@@ -567,19 +562,39 @@ def run_gui() -> None:
 
 def cmd_panel(args: list[str]) -> None:
     """
-    ``heropen panel`` — launch the control panel.
+    ``heropen panel`` — open the heropen web panel in your browser.
 
-    Uses tkinter GUI if available, falls back to TUI.
+    Default (no flag): opens https://heropen.net/heropen/ in the default browser
+    with a single command.
+    Use ``--gui`` for the local tkinter control panel (version/upgrade/agents),
+    or ``--tui`` / ``--terminal`` for the terminal UI.
     """
-    # Parse --tui flag to force terminal mode
+    import webbrowser
+
+    force_gui = any(a in ("--gui",) for a in args)
     force_tui = any(a in ("--tui", "--terminal") for a in args)
 
-    if not force_tui and _try_import_tk():
+    # Default: one command opens the web panel
+    if not force_gui and not force_tui:
+        url = "https://heropen.net/heropen/"
+        print(f"🌐 正在打开 heropen 面板：{url}")
         try:
-            run_gui()
-            return
+            ok = webbrowser.open(url, new=2)
+            if ok:
+                print("✅ 已在浏览器新标签页打开面板。")
+            else:
+                print("⚠️  无法自动打开浏览器，请手动访问：" + url)
         except Exception:
-            print("⚠️  GUI 面板异常，降级到终端模式：")
-            run_tui()
+            print("🌐  请在浏览器打开面板：" + url)
+        return
+
+    if force_gui:
+        if _try_import_tk():
+            try:
+                run_gui()
+                return
+            except Exception:
+                print("⚠️  GUI 面板异常，降级到终端模式：")
+        run_tui()
     else:
         run_tui()
