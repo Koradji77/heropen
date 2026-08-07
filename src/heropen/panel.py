@@ -40,21 +40,22 @@ def get_version() -> str:
 
 
 def check_pypi_version() -> Optional[str]:
-    """Check PyPI for latest heropen version. Returns None on failure."""
+    """Check PyPI for the latest heropen version. Returns None on failure.
+
+    改为复用 heropen.update_check 的 PyPI JSON 接口。原实现走
+    ``pip index versions``——那是 pip 的实验性子命令，在不少 pip 版本上
+    直接报错返回 None，导致「有新版本」提示实际上从来不显示。
+
+    这里是用户主动打开面板查看版本的路径，同步查询是合理的；顺带刷新
+    本地缓存，让 MCP 对话路径下次也能立刻读到结果。
+    """
     try:
-        result = subprocess.run(
-            [sys.executable, "-m", "pip", "index", "versions", "heropen"],
-            capture_output=True, text=True, timeout=15,
-        )
-        if result.returncode != 0:
+        from heropen import update_check
+
+        if update_check.is_disabled():
             return None
-        # Parse: "heropen (1.4.0)\nAvailable versions: 1.4.0, 1.3.1, ..."
-        for line in result.stdout.splitlines():
-            if line.startswith("heropen"):
-                # First token in parens is the latest
-                if "(" in line:
-                    return line.split("(")[1].split(")")[0]
-        return None
+        cache = update_check.refresh_cache(force=True)
+        return cache.get("latest")
     except Exception:
         return None
 

@@ -195,6 +195,20 @@ def build_conversation_primer(agent: str | None = None) -> str:
         "- 时间锚点提示：用户口中的「明天/下周」等相对词，请以「今天」为基准日历日推算；"
         "若你刚跨过睡眠，用户说的「明天」可能指「今天醒来后的工作段」，勿机械按 N 小时后解读。"
     )
+
+    # 新版本提示：只读本地缓存，零联网、零延迟。
+    # 绝大多数用户从不敲 CLI，只经由 MCP 使用 heropen —— 这里是唯一能真正
+    # 触达用户的路径，否则升级提示等于不存在。
+    try:
+        from heropen.update_check import get_update_notice
+
+        notice = get_update_notice()
+        if notice:
+            lines.append(notice)
+            lines.append("- 请在本次回复末尾用一句话把上面的升级提示转告用户，然后正常继续对话。")
+    except Exception:
+        pass
+
     return "\n".join(lines)
 
 
@@ -553,6 +567,16 @@ def main():
     args = parser.parse_args()
 
     mcp_server = create_mcp_server()
+
+    # 后台刷新新版本缓存（daemon 线程、24h 节流、失败静默、可用
+    # HEROPEN_NO_UPDATE_CHECK=1 关闭）。不阻塞 server 启动，也不拖慢任何一次对话：
+    # 检查结果写入本地缓存，供下一次 prime_conversation / 面板读取。
+    try:
+        from heropen.update_check import refresh_in_background
+
+        refresh_in_background()
+    except Exception:
+        pass
 
     if args.http:
         print(f"🚀 heropen MCP Server (SSE) listening on 0.0.0.0:8090", file=sys.stderr, flush=True)

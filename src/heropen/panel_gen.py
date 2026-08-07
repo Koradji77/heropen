@@ -22,11 +22,24 @@ import sqlite3
 import webbrowser
 from datetime import datetime
 
-from heropen.core import HERO_PEN_DIR, FREE_AGENT_LIMIT
+from heropen.core import HERO_PEN_DIR, FREE_AGENT_LIMIT, __version__ as CORE_VERSION
 
 CONFIG = os.path.join(HERO_PEN_DIR, "agent-config.json")
 OUT = os.path.join(HERO_PEN_DIR, "panel.html")
 PLUS_AGENT_LIMIT = 6
+
+
+def _version_payload() -> dict:
+    """当前版本 + 是否有新版（只读本地缓存，面板生成过程不联网）。"""
+    info = {"current": CORE_VERSION, "latest": None, "hasUpdate": False}
+    try:
+        from heropen.update_check import has_update, latest_version
+
+        info["latest"] = latest_version()
+        info["hasUpdate"] = has_update()
+    except Exception:
+        pass
+    return info
 
 
 def humanize(ts: str) -> str:
@@ -113,7 +126,7 @@ def build() -> str:
     if not os.path.exists(CONFIG):
         # 没配置文件时不崩，给个空壳提示
         payload = {"edition": "basic", "tierLabel": "免费版", "limit": FREE_AGENT_LIMIT,
-                   "totalMem": 0, "agents": []}
+                   "totalMem": 0, "agents": [], "ver": _version_payload()}
         return TEMPLATE.replace("/*__DATA__*/", json.dumps(payload, ensure_ascii=False))
 
     with open(CONFIG, encoding="utf-8") as f:
@@ -133,6 +146,7 @@ def build() -> str:
         "limit": limit,
         "totalMem": total_mem,
         "agents": data,
+        "ver": _version_payload(),
     }
     return TEMPLATE.replace("/*__DATA__*/", json.dumps(payload, ensure_ascii=False))
 
@@ -211,6 +225,13 @@ TEMPLATE = r"""<!DOCTYPE html>
   .empty { color:#5C544A; font-size:13px; padding:24px 0; }
   .locked { margin-top:14px; background:rgba(196,164,89,.06); border:1px dashed #3D3528; border-radius:12px; padding:16px 18px; font-size:12px; color:#8A7F72; }
   .locked b { color:#C4A459; }
+  .verline { font-size:11px; color:#5C544A; margin-bottom:18px; }
+  .verline b { color:#8A7F72; font-weight:600; }
+  .verline .dot-new { display:inline-block; width:6px; height:6px; border-radius:50%; background:#C4A459; box-shadow:0 0 6px #C4A459; margin-left:5px; vertical-align:middle; }
+  .upd { margin-bottom:20px; background:rgba(196,164,89,.08); border:1px solid #C4A459; border-radius:12px; padding:14px 18px; font-size:13px; color:#F0EBE3; display:flex; align-items:center; gap:12px; flex-wrap:wrap; }
+  .upd .tag { background:#C4A459; color:#0F0D0B; font-size:11px; font-weight:800; padding:3px 9px; border-radius:20px; white-space:nowrap; }
+  .upd code { background:rgba(0,0,0,.35); color:#C4A459; padding:3px 9px; border-radius:6px; font-size:12px; font-family:'SFMono-Regular',Consolas,monospace; }
+  .upd .muted { color:#8A7F72; font-size:11px; width:100%; }
   @media (max-width:768px){ .sidebar{display:none;} .main{margin-left:0;padding:20px;} }
 </style>
 </head>
@@ -219,11 +240,13 @@ TEMPLATE = r"""<!DOCTYPE html>
 <div class="sidebar">
   <div class="logo">🖊️ heropen</div>
   <div class="sub">本地面板 · 数据不出本机</div>
+  <div class="verline" id="verLine"></div>
   <div class="stats" id="stats"></div>
   <div class="nav-item active">🤖 Agent 状态</div>
   <div class="hint">只读视图。记忆由 agent 对话时自动写入，无需手动录入。<br>免费版显示 2 个 Agent，Plus 版显示 6 个。</div>
 </div>
 <div class="main">
+  <div id="updBanner"></div>
   <div id="viewGrid">
     <div class="view-title">🤖 Agent 状态 <span class="count">点任一 Agent 看它存了什么</span></div>
     <div id="agentGrid" class="agent-grid"></div>
@@ -241,6 +264,22 @@ const STLABEL = {online:'在线', idle:'闲置', offline:'离线'};
 function esc(s){ return (s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;'); }
 document.getElementById('tierTag').textContent = DATA.tierLabel + ' · ' + DATA.agents.length + ' 个 Agent';
 document.getElementById('stats').innerHTML = '共 <span>'+DATA.totalMem+'</span> 条记忆<br><span>'+DATA.agents.length+'</span> 个 Agent（'+DATA.tierLabel+'）';
+// 版本与升级提示（数据来自本地缓存，面板本身不联网）
+(function renderVersion(){
+  const v = DATA.ver || {};
+  const cur = v.current || '—';
+  document.getElementById('verLine').innerHTML = v.hasUpdate
+    ? '版本 <b>v'+esc(cur)+'</b><span class="dot-new" title="有新版本"></span>'
+    : '版本 <b>v'+esc(cur)+'</b>';
+  if (v.hasUpdate) {
+    document.getElementById('updBanner').innerHTML =
+      '<div class="upd"><span class="tag">有新版本</span>'
+      + '<span>v'+esc(cur)+' → <b>v'+esc(v.latest||'')+'</b>，升级命令：</span>'
+      + '<code>pip install --upgrade heropen</code>'
+      + '<span class="muted">升级后请重启 AI 助手使新版本生效。不想收到此提示可设置环境变量 HEROPEN_NO_UPDATE_CHECK=1。</span>'
+      + '</div>';
+  }
+})();
 function renderGrid(){
   document.getElementById('agentGrid').innerHTML = DATA.agents.map((a,i)=>`
     <div class="agent-card" onclick="drill(${i})">
