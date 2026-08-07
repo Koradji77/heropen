@@ -1,0 +1,17 @@
+name: No-Egress Assertion
+
+# C1 — 零外联可验证：把「零遥测 / 不向外发请求」变成 CI 强制断言。
+# 任何向源码引入遥测或未经声明的硬编码外联都会让构建失败。
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+  assert-no-egress:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Assert zero outbound telemetry
+        run: python3 scripts/assert_no_telemetry.py .

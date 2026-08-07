@@ -568,17 +568,19 @@ def cmd_panel(args: list[str]) -> None:
     agent .db files, renders the agent drill-down view) and opens it in the
     default browser via file:// — no server, no login, data never leaves the machine.
     Use ``--gui`` for the local tkinter control panel (version/upgrade/agents),
-    or ``--tui`` / ``--terminal`` for the terminal UI.
+    or ``--tui`` / ``--terminal`` for the terminal UI. Add ``--no-open`` to generate
+    the local panel file without opening a browser (headless / automation-friendly).
     """
     import webbrowser
 
     force_gui = any(a in ("--gui",) for a in args)
     force_tui = any(a in ("--tui", "--terminal") for a in args)
+    no_open = any(a in ("--no-open",) for a in args)
 
     # Default: one command builds + opens the LOCAL Plan-C panel
     if not force_gui and not force_tui:
         from heropen.panel_gen import build_and_open
-        build_and_open()
+        build_and_open(open_browser=not no_open)
         return
 
     if force_gui:

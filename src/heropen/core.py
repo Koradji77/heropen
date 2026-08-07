@@ -18,7 +18,7 @@ from datetime import date, datetime
 
 # ─── Paths ────────────────────────────────────────────────────
 
-__version__ = "1.8.9"
+__version__ = "1.9.0"
 _HPD = os.environ.get("HERO_PEN_DIR", "")
 if _HPD:
     HERO_PEN_DIR = _HPD
@@ -1159,6 +1159,72 @@ def sync_to_db(agent: str | None = None) -> int:
     return count
 
 
+# ─── Memory hygiene (C4: flag-only, never delete) ─────────────
+
+def _content_similarity(a: str, b: str) -> float:
+    """Lightweight local content similarity (difflib). Zero dependency, offline.
+
+    Used by flag_memory_hygiene for duplicate detection without re-querying
+    embeddings. Degrades to prefix-equality when difflib is unavailable.
+    """
+    try:
+        import difflib
+        return difflib.SequenceMatcher(None, a, b).ratio()
+    except Exception:
+        return 1.0 if a[:80] == b[:80] else 0.0
+
+
+def flag_memory_hygiene(results: list, agent: str | None = None) -> list:
+    """C4 记忆卫生 v1（只标不删）。
+
+    在搜索/列出结果上附加 *潜在风险标记*，**绝不删除或改写原数据**——
+    数据所有权属于用户，卫生动作只做提示，删除/合并由用户决定。
+
+    标记两类：
+      - duplicate_risk：与结果集中另一条内容高度相似（difflib ratio ≥ 0.85），疑似重复。
+      - stale_risk：created_at 距今超过 365 天，且来源非关键（非 session-checkpoint），疑似过期。
+
+    Returns:
+        带 `hygiene_flags` 字段的结果列表（原字段保持不变）。
+    """
+    try:
+        from datetime import datetime
+        _now = datetime.now()
+    except Exception:
+        _now = None
+
+    n = len(results)
+    for i, r in enumerate(results):
+        flags: list[str] = []
+        # 1) 重复风险：与其他条内容相似度
+        try:
+            ci = (r.get("content") or "")[:400]
+            for j in range(n):
+                if j == i:
+                    continue
+                cj = (results[j].get("content") or "")[:400]
+                if not ci or not cj:
+                    continue
+                if _content_similarity(ci, cj) >= 0.85:
+                    flags.append("duplicate_risk")
+                    break
+        except Exception:
+            pass
+        # 2) 过期风险：很久未被触碰且来源非关键
+        try:
+            created = r.get("created_at")
+            if created and _now is not None:
+                dt = datetime.fromisoformat(created)
+                age_days = (_now - dt).days
+                src = (r.get("source") or "")
+                if age_days > 365 and src != "session-checkpoint":
+                    flags.append("stale_risk")
+        except Exception:
+            pass
+        r["hygiene_flags"] = flags
+    return results
+
+
 # ─── Formatting ────────────────────────────────────────────────
 
 def format_recall(results: list, file=None) -> str:
@@ -1194,6 +1260,15 @@ def format_recall(results: list, file=None) -> str:
         lines.append(f"📅 {r['entry_date']}{sim_s}{ago} {tag_s}")
         if r.get("section"):
             lines.append(f"📌 {r['section']}")
+        flags = r.get("hygiene_flags") or []
+        if flags:
+            _flag_txt = " ".join(
+                "[可能重复]" if f == "duplicate_risk"
+                else "[可能过期]" if f == "stale_risk"
+                else f"[{f}]"
+                for f in flags
+            )
+            lines.append(f"  ⚠️ 卫生标记: {_flag_txt}")
         if r.get("source"):
             lines.append(f"  来源: {r['source']} | agent: {r.get('agent', '')}")
         lines.append(f"{'─' * 60}")

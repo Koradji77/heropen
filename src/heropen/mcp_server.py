@@ -23,6 +23,7 @@ from heropen.core import (
     AGENTS,
     add_entry,
     conn,
+    flag_memory_hygiene,
     get_default_agent,
     search_vector,
     search_fts,
@@ -300,6 +301,12 @@ def create_mcp_server():
             for sr in shared_results:
                 if sr.get("content", "")[:80] not in existing_contents:
                     results.append(sr)
+        except Exception:
+            pass
+
+        # C4 记忆卫生（只标不删）：给结果附加 hygiene_flags 提示，绝不删除原数据
+        try:
+            flag_memory_hygiene(results)
         except Exception:
             pass
 

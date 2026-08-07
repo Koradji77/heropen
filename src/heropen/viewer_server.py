@@ -305,10 +305,20 @@ class ViewerHandler(SimpleHTTPRequestHandler):
 
 
 def main():
+    # C2 安全自查：viewer 仅绑 loopback，绝不暴露到局域网/公网。
+    # 即便 HOST 常量被误改，也拒绝以非 loopback 地址启动。
+    _host = (HOST or "").lower()
+    if _host not in ("127.0.0.1", "localhost", "::1", "0:0:0:0:0:0:0:1"):
+        raise RuntimeError(
+            f"[heropen viewer] 安全约束：viewer 只能绑定 loopback（127.0.0.1 / localhost / ::1），"
+            f"当前 HOST={HOST} 会把面板暴露到网络，已拒绝启动。"
+            f"如需远程访问请自行通过 SSH 隧道转发，不要直接改 HOST。"
+        )
     httpd = HTTPServer((HOST, PORT), ViewerHandler)
     print(f"  heropen Web Viewer", flush=True)
     print(f"  http://127.0.0.1:{PORT}", flush=True)
     print(f"  API: http://127.0.0.1:{PORT}/api/health", flush=True)
+    print(f"  [安全] 仅绑定本机 loopback（{HOST}），不暴露到局域网/公网", flush=True)
     print(f"  Ctrl+C to stop", flush=True)
     try:
         httpd.serve_forever()

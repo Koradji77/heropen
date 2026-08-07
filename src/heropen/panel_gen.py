@@ -9,7 +9,8 @@ heropen.panel_gen — 本地面板生成器（Plan-C / Agent 下钻）
 
 免费(basic) 显示前 FREE_AGENT_LIMIT(=2) 个 agent；plus 显示前 6 个。
 调用 build_and_open() 会生成文件并用默认浏览器打开（file:// 协议），
-作为 ``heropen panel`` 命令的底层实现。
+作为 ``heropen panel`` 命令的底层实现。传 ``open_browser=False`` 则只生成
+文件不打开，适用于无 GUI / 自动化流水线（如 NAS 发版自检）场景。
 
 零第三方依赖：仅标准库 + heropen.core 的两个常量。
 """
@@ -136,9 +137,11 @@ def build() -> str:
     return TEMPLATE.replace("/*__DATA__*/", json.dumps(payload, ensure_ascii=False))
 
 
-def build_and_open() -> str:
+def build_and_open(open_browser: bool = True) -> str:
     """
-    生成 panel.html 并用默认浏览器打开（file:// 协议，数据不出本机）。
+    生成 panel.html（可选）用默认浏览器打开（file:// 协议，数据不出本机）。
+    open_browser=False 时仅生成文件、不打开浏览器，适用于无 GUI / 自动化
+    流水线（如 NAS 发版自检）场景。
     返回生成的文件路径。无 GUI / 浏览器打开失败时打印降级提示，不抛异常。
     """
     html = build()
@@ -146,14 +149,17 @@ def build_and_open() -> str:
     with open(OUT, "w", encoding="utf-8") as f:
         f.write(html)
     print(f"🖥️  已生成本地面板：{OUT}（{os.path.getsize(OUT)} bytes）")
-    try:
-        ok = webbrowser.open(f"file://{OUT}", new=2)
-        if ok:
-            print("✅ 已在浏览器新标签页打开面板。")
-        else:
-            print(f"⚠️  无法自动打开浏览器，请手动打开文件：{OUT}")
-    except Exception:
-        print(f"🌐  请在浏览器打开面板：{OUT}")
+    if open_browser:
+        try:
+            ok = webbrowser.open(f"file://{OUT}", new=2)
+            if ok:
+                print("✅ 已在浏览器新标签页打开面板。")
+            else:
+                print(f"⚠️  无法自动打开浏览器，请手动打开文件：{OUT}")
+        except Exception:
+            print(f"🌐  请在浏览器打开面板：{OUT}")
+    else:
+        print("🤖 无头模式：已生成面板文件，未自动打开浏览器。")
     return OUT
 
 

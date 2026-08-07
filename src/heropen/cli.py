@@ -15,7 +15,7 @@ from __future__ import annotations
 import sys
 from pathlib import Path
 
-from heropen.core import HERO_PEN_DIR
+from heropen.core import HERO_PEN_DIR, __version__ as _HP_VER
 
 
 def main():
@@ -127,7 +127,7 @@ def main():
 
 def print_help():
     help_text = f"""
-heropen v1.4.0 — AI Agent Long-term Memory System
+heropen {_HP_VER} — AI Agent Long-term Memory System
 
 Usage:
     heropen <command> [options]
