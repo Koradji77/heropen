@@ -29,6 +29,7 @@ from heropen.core import (
     search_fts,
     update_entry,
     startup_self_heal,
+    resolve_conflicts,
 )
 from heropen.core import session_checkpoint as _core_checkpoint
 from heropen.core import session_recover as _core_recover
@@ -324,8 +325,21 @@ def create_mcp_server():
         except Exception:
             pass
 
+        # C3 确定性矛盾消解：标注被压制的冲突条目，附裁决理由（只标不删）
+        conflict_resolution = []
+        try:
+            _cr = resolve_conflicts(results, agent)
+            for r in results:
+                rid = r.get("id")
+                if rid in _cr["suppressed_map"]:
+                    r["conflict_suppressed"] = True
+                    r["conflict_reason"] = _cr["suppressed_map"][rid]
+            conflict_resolution = _cr["clusters"]
+        except Exception:
+            pass
+
         return json.dumps(
-            {"method": method, "count": len(results), "results": results[:limit], "time_gap_hours": _compute_time_gap(results), "time_context": build_conversation_primer(agent)},
+            {"method": method, "count": len(results), "results": results[:limit], "time_gap_hours": _compute_time_gap(results), "time_context": build_conversation_primer(agent), "conflict_resolution": conflict_resolution},
             ensure_ascii=False,
         )
 

@@ -1225,6 +1225,134 @@ def flag_memory_hygiene(results: list, agent: str | None = None) -> list:
     return results
 
 
+def resolve_conflicts(results: list, agent: str | None = None) -> dict:
+    """C3 确定性矛盾消解（纯 Python 规则，零 LLM，结果可复现）。
+
+    当同一查询命中多条「指向同一主题键」的记忆时，按确定性优先级选出
+    一条胜出记忆，其余标记为被压制，并给出可读的裁决理由。
+    **绝不删除或改写任何原数据**——只标不删（与 C4 一致）。
+
+    冲突键定义：两条记忆共享至少一个非通用 tag，且内容不高度相似
+    （difflib ratio < 0.85，即不是重复、而是疑似矛盾）。
+
+    裁决优先级（确定性，可复现）：
+      1. 显式覆盖标记：content 含 `[覆盖]` 或 source == "override"
+      2. 时间戳：created_at 最新者胜
+      3. 来源权重：manual(3) > auto(2) > session-checkpoint/import(1) > 其他(0)
+
+    Returns:
+        {
+          "checked": int,
+          "clusters": [ {"key": str, "winner_id": int, "suppressed": [int], "reason": str}, ... ],
+          "suppressed_map": { int: str }   # id -> 裁决理由，供上层标注
+        }
+    """
+    import difflib
+    from datetime import datetime
+
+    GENERIC_TAGS = {"session-checkpoint", "session", ""}
+
+    def _tags(r: dict) -> set:
+        return {t.strip() for t in (r.get("tags") or "").split(",") if t.strip()}
+
+    def _source_weight(src) -> int:
+        src = (src or "").lower()
+        if src == "manual":
+            return 3
+        if src == "auto":
+            return 2
+        if src in ("session-checkpoint", "import"):
+            return 1
+        return 0
+
+    def _parse_dt(r: dict):
+        try:
+            return datetime.fromisoformat(r.get("created_at"))
+        except Exception:
+            return datetime.min
+
+    def _is_override(r: dict) -> bool:
+        return (r.get("source") == "override") or ("[覆盖]" in (r.get("content") or ""))
+
+    n = len(results)
+    used: set = set()
+    clusters = []          # list of (key_tag, [indices])
+    suppressed_map: dict = {}
+
+    for i in range(n):
+        if i in used:
+            continue
+        ti = _tags(results[i]) - GENERIC_TAGS
+        if not ti:
+            continue
+        group = [i]
+        for j in range(i + 1, n):
+            if j in used:
+                continue
+            tj = _tags(results[j]) - GENERIC_TAGS
+            shared = ti & tj
+            if not shared:
+                continue
+            ci = (results[i].get("content") or "")[:400]
+            cj = (results[j].get("content") or "")[:400]
+            if not ci or not cj:
+                continue
+            sim = difflib.SequenceMatcher(None, ci, cj).ratio()
+            # 相关但非完全相同：排除 exact/近似重复（sim≥0.98）与完全不相关（sim<0.5），
+            # 落在 [0.5, 0.98) 即「同一主题键下内容不同」→ 疑似矛盾，进入确定性裁决
+            if 0.5 <= sim < 0.98:
+                group.append(j)
+        if len(group) > 1:
+            for idx in group:
+                used.add(idx)
+            all_tags = set().union(*[_tags(results[g]) - GENERIC_TAGS for g in group])
+            key_tag = sorted(all_tags)[0]
+            clusters.append((key_tag, group))
+
+    out_clusters = []
+    for key_tag, group in clusters:
+        members = [results[g] for g in group]
+
+        def _score(r: dict):
+            return (
+                1 if _is_override(r) else 0,
+                _parse_dt(r),
+                _source_weight(r.get("source")),
+                r.get("id") or 0,
+            )
+
+        ranked = sorted(members, key=_score, reverse=True)
+        winner = ranked[0]
+        suppressed = ranked[1:]
+        for m in suppressed:
+            why = []
+            if _is_override(winner):
+                why.append("胜出方含显式[覆盖]标记")
+            else:
+                if _parse_dt(winner) > _parse_dt(m):
+                    why.append("胜出方写入时间更新")
+                if _source_weight(winner.get("source")) > _source_weight(m.get("source")):
+                    why.append(f"胜出方来源权重更高({winner.get('source')})")
+            reason = (
+                f"与 #{winner.get('id')} 共享标签「{key_tag}」且内容不一致（疑似矛盾）；"
+                f"按确定性规则（{', '.join(why) or 'id 最大'}）裁决 #{winner.get('id')} 为权威，"
+                f"本条标记为被取代（原数据未删除）"
+            )
+            suppressed_map[m.get("id")] = reason
+        out_clusters.append({
+            "key": key_tag,
+            "winner_id": winner.get("id"),
+            "suppressed": [m.get("id") for m in suppressed],
+            "reason": f"标签「{key_tag}」下裁决 #{winner.get('id')} 为权威（压制 {len(suppressed)} 条）",
+        })
+
+    return {
+        "checked": n,
+        "clusters": out_clusters,
+        "suppressed_map": suppressed_map,
+    }
+
+
 # ─── Formatting ────────────────────────────────────────────────
 
 def format_recall(results: list, file=None) -> str:

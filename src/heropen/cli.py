@@ -119,6 +119,9 @@ def main():
     elif cmd == "diagnose":
         from heropen.cli_commands import cmd_diagnose
         cmd_diagnose(args[1:])
+    elif cmd == "doctor":
+        from heropen.cli_commands import cmd_doctor
+        cmd_doctor(args[1:])
     else:
         print(f"heropen: unknown command '{cmd}'")
         print_help()
@@ -155,6 +158,7 @@ Commands:
     health          Check system health (alias for status)
     session         Save or recover session checkpoint
     diagnose        Run system diagnostics (config, DB, connectivity, version)
+    doctor          工程税自检（写入纪律 / Prompt Cache / 容量 / Embedding 迁移 / 端口安全）
     panel           打开本地记忆面板（Plan-C，一条命令）
     viewer          Launch web viewer (http://127.0.0.1:9020)
     mcp             Start MCP server

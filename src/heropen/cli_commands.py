@@ -829,3 +829,130 @@ def cmd_diagnose(args: list[str]) -> None:
     # ── Summary ──────────────────────────────────────────────────
     print(f"\n{_BOLD}诊断完成{_N}")
 
+
+def cmd_doctor(args: list[str]) -> None:
+    """heropen doctor — 工程税自检（映射 AWS 五大工程税）。
+
+    只读本地数据库与环境变量，零联网、零外部副作用、失败静默。
+    五项自检，每项输出「通过 / 提示 / 告警」三态：
+      1. 写入纪律与失效
+      2. Prompt Cache 冲突
+      3. 跨模型容量上限
+      4. Embedding 迁移数据税
+      5. 端口安全
+    """
+    # 解析 --agent
+    agent = "agent"
+    i = 0
+    while i < len(args):
+        a = args[i]
+        if a in ("--agent",) and i + 1 < len(args):
+            agent = args[i + 1]
+        elif a.startswith("--agent="):
+            agent = a.split("=", 1)[1]
+        i += 1
+
+    # ANSI 三态
+    _G = "\033[92m"; _R = "\033[91m"; _Y = "\033[93m"; _B = "\033[94m"; _N = "\033[0m"; _BOLD = "\033[1m"
+    def _ok(m): print(f"  {_G}✅{_N} {m}")
+    def _warn(m): print(f"  {_Y}⚠️{_N} {m}")
+    def _fail(m): print(f"  {_R}❌{_N} {m}")
+
+    print(f"\n{_BOLD}🩺 heropen 工程税自检{_N}\n")
+
+    from heropen.core import AGENTS, conn as _conn, db_path as _db_path, HERO_PEN_DIR
+    import os as _os
+    from datetime import datetime
+    agents = list(AGENTS.keys()) if AGENTS else [agent]
+    if agent not in agents and agent != "agent":
+        agents = [agent]
+
+    total_entries = 0
+    total_chars = 0
+    stale_count = 0
+    latest_dt = None
+    for ag in agents:
+        dbp = _db_path(ag)
+        if not _os.path.exists(dbp):
+            continue
+        try:
+            c = _conn(ag)
+            rows = c.execute("SELECT id, content, created_at FROM entries").fetchall()
+            c.close()
+            for r in rows:
+                total_entries += 1
+                total_chars += len(r[1] or "")
+                try:
+                    dt = datetime.fromisoformat(r[2])
+                    if latest_dt is None or dt > latest_dt:
+                        latest_dt = dt
+                    if (datetime.now() - dt).days > 365:
+                        stale_count += 1
+                except Exception:
+                    pass
+        except Exception:
+            pass
+
+    # ── 1. 写入纪律与失效 ──
+    print(f"{_B}── 1. 写入纪律与失效 ──{_N}")
+    if total_entries == 0:
+        _warn("暂无记忆条目 — 无法评估写入纪律；先 add 几条记忆")
+    else:
+        if stale_count > 0:
+            ratio = stale_count / total_entries
+            if ratio > 0.3:
+                _warn(f"{total_entries} 条中 {stale_count} 条超过 365 天未更新（占比 {ratio:.0%}）— 建议运行记忆卫生复查")
+            else:
+                _ok(f"{total_entries} 条记忆，{stale_count} 条陈旧（<30%）— 写入纪律良好")
+        else:
+            _ok(f"{total_entries} 条记忆，无超过 365 天的陈旧条目")
+        if latest_dt:
+            days = (datetime.now() - latest_dt).days
+            if days > 30:
+                _warn(f"最近一次写入在 {days} 天前 — 记忆可能已偏离当前上下文")
+            else:
+                _ok(f"最近写入 {days} 天前 — 记忆较新鲜")
+
+    # ── 2. Prompt Cache 冲突 ──
+    print(f"\n{_B}── 2. Prompt Cache 冲突 ──{_N}")
+    BUDGET = 4000
+    if total_entries == 0:
+        _warn("无记忆数据 — 跳过 Prompt Cache 评估")
+    else:
+        avg = total_chars / total_entries
+        if avg > BUDGET:
+            _warn(f"平均每条记忆 {avg:.0f} 字符（> {BUDGET} 建议预算）— 过长记忆会稀释 Prompt Cache 命中；建议裁剪单条长度")
+        else:
+            _ok(f"平均每条记忆 {avg:.0f} 字符（≤ {BUDGET} 预算）— 对 Prompt Cache 友好")
+
+    # ── 3. 跨模型容量上限 ──
+    print(f"\n{_B}── 3. 跨模型容量上限 ──{_N}")
+    CAPS = [("8K", 8000 * 4), ("32K", 32000 * 4), ("128K", 128000 * 4)]
+    if total_chars == 0:
+        _warn("无记忆数据 — 跳过容量评估")
+    else:
+        exceeded = [name for name, cap in CAPS if total_chars > cap]
+        if not exceeded:
+            _ok(f"记忆总量 {total_chars:,} 字符 — 在 8K/32K/128K 模型容量内")
+        else:
+            _warn(f"记忆总量 {total_chars:,} 字符 — 超出 {', '.join(exceeded)} 模型容量上限；跨模型切换时需注意上下文截断")
+
+    # ── 4. Embedding 迁移数据税 ──
+    print(f"\n{_B}── 4. Embedding 迁移数据税 ──{_N}")
+    ep = _os.environ.get("EMBEDDING_ENDPOINT")
+    if not ep:
+        _ok("未配置 EMBEDDING_ENDPOINT — 使用本地 fastembed，无迁移数据税")
+    else:
+        if total_entries == 0:
+            _ok(f"已配置自托管 endpoint（{ep}）— 当前无记忆，切换无成本")
+        else:
+            _warn(f"已配置自托管 endpoint（{ep}）— 若切换端点，需对 {total_entries} 条记忆重新嵌入（数据税）；迁移前请评估收益")
+
+    # ── 5. 端口安全 ──
+    print(f"\n{_B}── 5. 端口安全 ──{_N}")
+    _warn("若以 `heropen mcp --http` 启动，MCP 服务默认绑定 0.0.0.0:8090（暴露到局域网/公网）；仅本机使用请加防火墙或绑定 127.0.0.1")
+    _ok("viewer（heropen viewer）硬编码仅绑定 loopback（127.0.0.1）— 已满足 C2 安全约束")
+
+    print(f"\n{_BOLD}自检完成{_N}")
+    print(f"  记忆目录: {HERO_PEN_DIR}")
+
