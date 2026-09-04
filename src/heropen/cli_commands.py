@@ -10,6 +10,7 @@ from __future__ import annotations
 import argparse
 import json
 import os
+import re
 import sys
 from datetime import date, datetime
 
@@ -48,13 +49,31 @@ def _build_parser(action: str) -> argparse.ArgumentParser:
 
 
 def _resolve_agent(args: list[str]) -> str:
-    """Extract --agent from args list. Returns the agent name or empty for default."""
+    """Extract --agent from args list. Returns the agent name or 'agent' for default."""
     for i, a in enumerate(args):
         if a in ("--agent",) and i + 1 < len(args):
             return args[i + 1]
         if a.startswith("--agent="):
             return a.split("=", 1)[1]
     return "agent"
+
+
+def _tokenize(text: str) -> list[str]:
+    """Split a natural-language query into search tokens.
+
+    Latin/digit runs are kept whole; CJK runs are kept as phrases.
+    Used for the keyword (FTS) fallback so that e.g. "Eddie 产品经理"
+    matches a memory whose content is "Eddie 是 heropen 的 PM".
+    """
+    if not text:
+        return []
+    tokens = re.findall(r"[A-Za-z0-9]+", text)
+    tokens += re.findall(r"[\u4e00-\u9fff]+", text)
+    return [t for t in tokens if t.strip()]
+
+
+def _has_help(args: list[str]) -> bool:
+    return any(a in ("-h", "--help") for a in args)
 
 
 # ─── Bootstrap / Self-heal ──────────────────────────────────────
@@ -157,6 +176,9 @@ def cmd_sync(args: list[str]) -> None:
 
 
 def cmd_recall(args: list[str]) -> None:
+    if _has_help(args):
+        print("用法: heropen recall \"查询词\" [--agent 名称] [--limit 数量] [--fts] [--graph] [--date YYYY-MM-DD] [--tag 标签] [--last N] [--today]")
+        return
     # Simple arg parsing for recall
     agent = "agent"
     query_parts: list[str] = []
@@ -217,17 +239,17 @@ def cmd_recall(args: list[str]) -> None:
         results = search_recent(opts["last"], agent)
     elif query:
         if opts["fts"]:
-            results = search_fts([query], opts["limit"], agent)
+            results = search_fts(_tokenize(query), opts["limit"], agent)
         elif opts["graph"]:
             results = search_graph(query, opts["limit"], agent)
             if results is None:
-                results = search_fts([query], opts["limit"], agent)
+                results = search_fts(_tokenize(query), opts["limit"], agent)
         else:
             results = search_vector(query, opts["limit"], agent)
             if results is None:
                 results = search_graph(query, opts["limit"], agent)
             if results is None:
-                results = search_fts([query], opts["limit"], agent)
+                results = search_fts(_tokenize(query), opts["limit"], agent)
     else:
         results = search_recent(opts["limit"], agent)
 
@@ -235,6 +257,9 @@ def cmd_recall(args: list[str]) -> None:
 
 
 def cmd_add(args: list[str]) -> None:
+    if _has_help(args):
+        print("用法: heropen add --content \"记忆内容\" [--section 分类] [--tags 标签] [--agent 名称]")
+        return
     agent = "agent"
     section = ""
     content = ""
@@ -276,9 +301,10 @@ def cmd_add(args: list[str]) -> None:
     entry_id = add_entry(today, content, section, tags, agent, "manual", emb_bytes)
     print(f"✅ 已添加记忆 [{entry_id}] [{tags}] {today}")
     if emb:
-        print("   💡 embedding已生成，知识图谱已更新")
+        print("   💡 embedding已生成，语义检索已就绪")
     else:
-        print("   💡 知识图谱已更新")
+        print("   ⚠️ 本地向量引擎不可用，该记忆暂不支持语义检索。")
+        print("      可运行 `heropen embed` 或设置 EMBEDDING_ENDPOINT 后重试。")
 
 
 def cmd_capture(args: list[str]) -> None:

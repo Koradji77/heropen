@@ -18,7 +18,7 @@ from datetime import date, datetime
 
 # ─── Paths ────────────────────────────────────────────────────
 
-__version__ = "1.9.1"
+__version__ = "1.9.2"
 _HPD = os.environ.get("HERO_PEN_DIR", "")
 if _HPD:
     HERO_PEN_DIR = _HPD
@@ -217,7 +217,7 @@ def _get_local_embedding(text: str) -> list[float] | None:
             _get_local_embedding._model = TextEmbedding(
                 model_name=LOCAL_EMBEDDING_MODEL,
                 max_length=512,
-                cache_dir=None,
+                cache_dir=os.path.join(HERO_PEN_DIR, "models"),
             )
         emb = list(_get_local_embedding._model.embed(text))[0]
         return emb.tolist() if hasattr(emb, "tolist") else list(emb)
