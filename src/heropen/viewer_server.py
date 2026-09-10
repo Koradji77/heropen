@@ -12,13 +12,13 @@ from datetime import date
 from http.server import HTTPServer, SimpleHTTPRequestHandler
 from urllib.parse import urlparse, parse_qs
 
-from heropen.core import AGENTS, conn
+from heropen.core import AGENTS, conn, get_agent_limit
 from heropen import __version__ as HP_VERSION
 
 SERVER_DIR = os.path.dirname(os.path.abspath(__file__))
 HOST = "127.0.0.1"
 PORT = 9020
-FREE_AGENT_LIMIT = 2
+FREE_AGENT_LIMIT = 2  # fallback; prefer get_agent_limit() at runtime
 
 # ── AI assistant scanner ──
 
@@ -166,7 +166,7 @@ class ViewerHandler(SimpleHTTPRequestHandler):
             "status": "ok",
             "version": HP_VERSION,
             "agents": agents_stats,
-            "free_limit": FREE_AGENT_LIMIT,
+            "free_limit": get_agent_limit(),
             "setup_done": bool(AGENTS),
         })
 
@@ -215,13 +215,13 @@ class ViewerHandler(SimpleHTTPRequestHandler):
         return self._send_json({
             "configured": bool(AGENTS),
             "agent_count": len(AGENTS),
-            "free_limit": FREE_AGENT_LIMIT,
+            "free_limit": get_agent_limit(),
         })
 
     def _handle_setup_scan(self):
         return self._send_json({
             "assistants": _scan_assistants(),
-            "free_limit": FREE_AGENT_LIMIT,
+            "free_limit": get_agent_limit(),
         })
 
     def _handle_setup_configure(self, body: dict):

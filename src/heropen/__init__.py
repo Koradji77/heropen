@@ -4,7 +4,7 @@ Self-hosted, MCP-native memory system with vector + FTS + LIKE search,
 automatic backup, crash recovery, and multi-agent isolation.
 """
 
-__version__ = "1.9.2"
+__version__ = "1.9.3"
 __all__ = [
     "add_entry", "update_entry",
     "search_vector", "search_fts", "search_graph",
@@ -13,6 +13,7 @@ __all__ = [
     "auto_backup", "integrity_check", "startup_self_heal",
     "init_db", "conn", "db_path",
     "get_embedding", "cosine_similarity",
+    "get_embedding_status", "is_arm64", "embedding_install_hint",
     "capture_session_content",
     "AGENTS",
 ]
@@ -35,6 +36,9 @@ from heropen.core import (
     db_path,
     get_embedding,
     cosine_similarity,
+    get_embedding_status,
+    is_arm64,
+    embedding_install_hint,
     capture_session_content,
     AGENTS,
 )

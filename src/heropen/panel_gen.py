@@ -22,7 +22,7 @@ import sqlite3
 import webbrowser
 from datetime import datetime
 
-from heropen.core import HERO_PEN_DIR, FREE_AGENT_LIMIT, __version__ as CORE_VERSION
+from heropen.core import HERO_PEN_DIR, FREE_AGENT_LIMIT, get_agent_limit, get_edition, __version__ as CORE_VERSION
 
 CONFIG = os.path.join(HERO_PEN_DIR, "agent-config.json")
 OUT = os.path.join(HERO_PEN_DIR, "panel.html")
@@ -131,14 +131,14 @@ def build() -> str:
 
     with open(CONFIG, encoding="utf-8") as f:
         cfg = json.load(f)
-    edition = (cfg.get("edition") or "basic").lower()
-    limit = PLUS_AGENT_LIMIT if edition in ("plus", "pro") else FREE_AGENT_LIMIT
+    edition = get_edition()
+    limit = get_agent_limit()
     agents_cfg = [a for a in cfg.get("agents", []) if not str(a["name"]).startswith("_")]
     shown = agents_cfg[:limit]
 
     data = [read_agent(a["name"], a.get("db_path", ""), a.get("online")) for a in shown]
     total_mem = sum(a["mem"] for a in data)
-    tier_label = "Plus" if limit == PLUS_AGENT_LIMIT else "免费版"
+    tier_label = "Plus" if edition in ("plus", "pro") else "免费版"
 
     payload = {
         "edition": edition,

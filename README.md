@@ -15,8 +15,19 @@
 ## 安装
 
 ```bash
-pip install heropen
+pip install heropen                 # 核心：全文检索，任意架构（含 ARM64）可装
+pip install 'heropen[embedding]'    # 可选：本地向量（依赖 onnxruntime）
 ```
+
+### ARM64 说明
+
+| 平台 | 建议 |
+|------|------|
+| Apple Silicon (macOS arm64) | 通常 `pip install 'heropen[embedding]'` 即可 |
+| Windows ARM64 | 同上；确认 Python 为 ARM64 构建 |
+| Linux aarch64 | 先装核心；再试 embedding。若 `onnxruntime` 无匹配 wheel，用 `EMBEDDING_ENDPOINT` 自托管向量，或仅用 FTS |
+
+没有本地向量时，`search` / `recall` 会自动降级为全文检索，**不影响记忆存取**。
 
 重启你的 agent，完成。首次启动会自动探测你的 agent（Claude Code、Cursor、Windsurf 或任意 MCP 客户端），建好数据库并注册记忆工具。
 

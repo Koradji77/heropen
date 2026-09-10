@@ -510,6 +510,11 @@ def create_mcp_server():
             "memory_count": total_memory,
             "last_memory_at": last_memory_at,
         }
+        try:
+            from heropen.core import get_embedding_status
+            result["embedding"] = get_embedding_status()
+        except Exception:
+            pass
 
         # Merge in pending setup fields
         result.update(pending)
@@ -568,17 +573,42 @@ def create_mcp_server():
         }, ensure_ascii=False)
 
     # HTTP settings (only used with --http)
-    mcp.settings.host = "0.0.0.0"
-    mcp.settings.port = 8090
-    mcp.settings.transport_security.enable_dns_rebinding_protection = False
+    # Default bind is loopback; use --host 0.0.0.0 only when intentionally exposing.
+    mcp.settings.host = os.environ.get("HEROPEN_MCP_HOST", "127.0.0.1")
+    mcp.settings.port = int(os.environ.get("HEROPEN_MCP_PORT", "8090"))
+    # DNS rebinding protection is safe to leave on for non-loopback binds.
+    # Keep it off only for local stdio/SSE-on-localhost setups that some clients need.
+    host = mcp.settings.host
+    is_loopback = host in ("127.0.0.1", "localhost", "::1")
+    mcp.settings.transport_security.enable_dns_rebinding_protection = not is_loopback
 
     return mcp
 
 
 def main():
     parser = argparse.ArgumentParser(description="heropen MCP Server")
-    parser.add_argument("--http", action="store_true", help="Run as HTTP/SSE server on 0.0.0.0:8090")
+    parser.add_argument(
+        "--http",
+        action="store_true",
+        help="Run as HTTP/SSE server (default host 127.0.0.1:8090)",
+    )
+    parser.add_argument(
+        "--host",
+        default=None,
+        help="HTTP bind host (default: 127.0.0.1; set 0.0.0.0 to expose LAN)",
+    )
+    parser.add_argument(
+        "--port",
+        type=int,
+        default=None,
+        help="HTTP bind port (default: 8090)",
+    )
     args = parser.parse_args()
+
+    if args.host:
+        os.environ["HEROPEN_MCP_HOST"] = args.host
+    if args.port:
+        os.environ["HEROPEN_MCP_PORT"] = str(args.port)
 
     mcp_server = create_mcp_server()
 
@@ -593,7 +623,13 @@ def main():
         pass
 
     if args.http:
-        print(f"🚀 heropen MCP Server (SSE) listening on 0.0.0.0:8090", file=sys.stderr, flush=True)
+        host = os.environ.get("HEROPEN_MCP_HOST", "127.0.0.1")
+        port = os.environ.get("HEROPEN_MCP_PORT", "8090")
+        print(
+            f"heropen MCP Server (SSE) listening on http://{host}:{port}",
+            file=sys.stderr,
+            flush=True,
+        )
         mcp_server.run(transport="sse")
     else:
         mcp_server.run(transport="stdio")

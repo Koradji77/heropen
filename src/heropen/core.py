@@ -18,7 +18,7 @@ from datetime import date, datetime
 
 # ─── Paths ────────────────────────────────────────────────────
 
-__version__ = "1.9.2"
+__version__ = "1.9.3"
 _HPD = os.environ.get("HERO_PEN_DIR", "")
 if _HPD:
     HERO_PEN_DIR = _HPD
@@ -29,34 +29,55 @@ BACKUP_DIR = os.path.join(HERO_PEN_DIR, "backups")
 BACKUP_KEEP_LOCAL = 3
 BACKUP_KEEP_REMOTE = 7
 
-# ─── Free tier: memory isolation limit ─────────────────────
-# FREE_AGENT_LIMIT = 2. Change this number?
-# ALL agents share one memory pool. Punishment, not error.
+# ─── Agent display / install limits (config-driven, no code traps) ─
+# basic → 2 isolated agents in UI/install; plus/pro → 6.
+# Override with env HEROPEN_AGENT_LIMIT (positive int).
 FREE_AGENT_LIMIT = 2
+PLUS_AGENT_LIMIT = 6
 OVERFLOW_AGENT = "_shared"
+
+
+def _load_agent_config() -> dict:
+    """Load ~/.heropen/agent-config.json or empty dict."""
+    config_path = os.path.join(HERO_PEN_DIR, "agent-config.json")
+    if not os.path.exists(config_path):
+        return {}
+    try:
+        with open(config_path, encoding="utf-8") as _f:
+            data = json.load(_f)
+        return data if isinstance(data, dict) else {}
+    except Exception:
+        return {}
+
+
+def get_edition() -> str:
+    """Return edition from agent-config.json: basic | plus | pro."""
+    edition = str(_load_agent_config().get("edition") or "basic").lower().strip()
+    return edition if edition in ("basic", "plus", "pro") else "basic"
+
+
+def get_agent_limit() -> int:
+    """Max named agents for UI/install hints. Config + env, never a silent trap."""
+    env = os.environ.get("HEROPEN_AGENT_LIMIT", "").strip()
+    if env.isdigit() and int(env) > 0:
+        return int(env)
+    return PLUS_AGENT_LIMIT if get_edition() in ("plus", "pro") else FREE_AGENT_LIMIT
+
 
 # ─── Dynamic AGENTS from agent-config.json ─────────────────────
 
 def _load_agents() -> dict[str, str]:
     """Load agent→db mapping from agent-config.json. Falls back to built-in defaults."""
-    config_path = os.path.join(HERO_PEN_DIR, "agent-config.json")
-    if os.path.exists(config_path):
-        try:
-            import json as _json
-            with open(config_path, encoding="utf-8") as _f:
-                _cfg = _json.load(_f)
-            _agents_list = _cfg.get("agents", [])
-            if _agents_list:
-                return {_a["name"]: f"{_a['name']}.db" for _a in _agents_list if "name" in _a}
-        except Exception:
-            pass
+    _agents_list = _load_agent_config().get("agents", [])
+    if isinstance(_agents_list, list) and _agents_list:
+        return {_a["name"]: f"{_a['name']}.db" for _a in _agents_list if isinstance(_a, dict) and "name" in _a}
     return {}
 
 AGENTS: dict[str, str] = _load_agents()
 
 def _free_tier_agents() -> list[str]:
-    """First FREE_AGENT_LIMIT agents from AGENTS (excluding _shared)."""
-    return [k for k in AGENTS if not k.startswith("_")][:FREE_AGENT_LIMIT]
+    """First get_agent_limit() agents from AGENTS (excluding _shared)."""
+    return [k for k in AGENTS if not k.startswith("_")][:get_agent_limit()]
 
 FREE_TIER_AGENTS: list[str] = _free_tier_agents()
 
@@ -96,27 +117,27 @@ def _load_entities() -> dict[str, tuple[str, str]]:
 
 
 def _resolve_agent(agent: str) -> str:
-    """Resolve agent → DB pool. Tamper with FREE_AGENT_LIMIT? Say goodbye to isolation."""
-    if FREE_AGENT_LIMIT != 2:  # 🚨 tampering detected → all agents collapse into one pool
-        return OVERFLOW_AGENT
-    if agent in _free_tier_agents():
+    """Resolve agent name for pool hints.
+
+    Each configured agent still uses its own ``{name}.db`` via ``db_path``.
+    Agents beyond the configured limit are mapped to ``_shared`` only when
+    callers explicitly use this helper for overflow routing.
+    """
+    if agent in _free_tier_agents() or agent == OVERFLOW_AGENT:
         return agent
-    return OVERFLOW_AGENT
+    if agent in AGENTS and not agent.startswith("_"):
+        # Named but over the UI/install limit → shared pool for overflow callers
+        return OVERFLOW_AGENT
+    return agent if agent else OVERFLOW_AGENT
 
 
 def get_default_agent() -> str:
     """Read default agent from agent-config.json, fallback to first key in AGENTS."""
-    import json as _json
-    config_path = os.path.join(HERO_PEN_DIR, "agent-config.json")
-    if os.path.exists(config_path):
-        try:
-            with open(config_path, encoding="utf-8") as _f:
-                _cfg = _json.load(_f)
-            _agents = _cfg.get("agents", [])
-            if _agents:
-                return _agents[0]["name"]
-        except Exception:
-            pass
+    _agents = _load_agent_config().get("agents", [])
+    if isinstance(_agents, list) and _agents:
+        name = _agents[0].get("name") if isinstance(_agents[0], dict) else None
+        if name:
+            return name
     return next(iter(AGENTS.keys()), "_shared")
 
 
@@ -207,9 +228,98 @@ def startup_self_heal(agent: str | None = None) -> dict:
 
 LOCAL_EMBEDDING_MODEL = "BAAI/bge-small-zh-v1.5"
 
+# Cached probe result for embedding backends (None = not probed yet)
+_EMBEDDING_STATUS_CACHE: dict | None = None
+
+
+def _platform_triplet() -> tuple[str, str]:
+    """Return (system, machine) e.g. ('Linux', 'aarch64')."""
+    import platform
+    return platform.system(), platform.machine()
+
+
+def is_arm64() -> bool:
+    """True on Apple Silicon / Linux aarch64 / Windows ARM64."""
+    machine = platform_machine = __import__("platform").machine().lower()
+    return machine in ("arm64", "aarch64", "armv8l")
+
+
+def embedding_install_hint() -> str:
+    """Human-readable install tip for the current CPU architecture."""
+    system, machine = _platform_triplet()
+    arch = machine.lower()
+    if system == "Darwin" and arch in ("arm64", "aarch64"):
+        return "Apple Silicon：pip install 'heropen[embedding]'（onnxruntime 官方有 macOS arm64 wheel）"
+    if system == "Windows" and arch in ("arm64", "aarch64"):
+        return "Windows ARM64：pip install 'heropen[embedding]'（需匹配当前 Python 的 onnxruntime win_arm64 wheel）"
+    if system == "Linux" and arch in ("arm64", "aarch64"):
+        return (
+            "Linux aarch64：优先 pip install 'heropen[embedding]'；"
+            "若 onnxruntime 无对应 wheel，可试 "
+            "pip install 'onnxruntime==1.19.2' fastembed，"
+            "或设置 EMBEDDING_ENDPOINT 走自托管向量，"
+            "再不济仍可用全文检索（FTS）"
+        )
+    return "pip install 'heropen[embedding]' 启用本地向量引擎"
+
+
+def get_embedding_status(*, refresh: bool = False) -> dict:
+    """Probe embedding backends. Safe on ARM when onnx/fastembed is missing.
+
+    Returns dict with keys: available, backend, arch, system, onnxruntime,
+    fastembed, remote_configured, hint, detail.
+    """
+    global _EMBEDDING_STATUS_CACHE
+    if _EMBEDDING_STATUS_CACHE is not None and not refresh:
+        return dict(_EMBEDDING_STATUS_CACHE)
+
+    system, machine = _platform_triplet()
+    status: dict = {
+        "available": False,
+        "backend": "none",
+        "arch": machine,
+        "system": system,
+        "arm64": is_arm64(),
+        "onnxruntime": False,
+        "fastembed": False,
+        "remote_configured": bool(os.environ.get("EMBEDDING_ENDPOINT", "").strip()),
+        "hint": embedding_install_hint(),
+        "detail": "",
+    }
+
+    if status["remote_configured"]:
+        status["available"] = True
+        status["backend"] = "remote"
+        status["detail"] = "使用 EMBEDDING_ENDPOINT 自托管向量"
+        _EMBEDDING_STATUS_CACHE = dict(status)
+        return status
+
+    try:
+        import onnxruntime  # type: ignore  # noqa: F401
+        status["onnxruntime"] = True
+    except Exception as exc:
+        status["detail"] = f"onnxruntime 不可用: {exc}"
+        if is_arm64():
+            status["detail"] += "（ARM64 上常见：无匹配 wheel 或 Python 版本过新）"
+        _EMBEDDING_STATUS_CACHE = dict(status)
+        return status
+
+    try:
+        from fastembed import TextEmbedding  # type: ignore  # noqa: F401
+        status["fastembed"] = True
+        status["available"] = True
+        status["backend"] = "fastembed"
+        status["detail"] = f"本地模型 {LOCAL_EMBEDDING_MODEL}"
+    except Exception as exc:
+        status["detail"] = f"fastembed 不可用: {exc}"
+        status["hint"] = embedding_install_hint()
+
+    _EMBEDDING_STATUS_CACHE = dict(status)
+    return status
+
 
 def _get_local_embedding(text: str) -> list[float] | None:
-    """Local fastembed (CPU, offline, no PyTorch)."""
+    """Local fastembed (CPU, offline, no PyTorch). Returns None on ARM without wheels."""
     try:
         os.environ.setdefault("HF_ENDPOINT", "https://hf-mirror.com")
         from fastembed import TextEmbedding  # type: ignore
@@ -222,6 +332,9 @@ def _get_local_embedding(text: str) -> list[float] | None:
         emb = list(_get_local_embedding._model.embed(text))[0]
         return emb.tolist() if hasattr(emb, "tolist") else list(emb)
     except Exception:
+        # Invalidate probe cache so status reflects the failure next time
+        global _EMBEDDING_STATUS_CACHE
+        _EMBEDDING_STATUS_CACHE = None
         return None
 
 
@@ -234,20 +347,20 @@ def _call_remote_embedding(text: str) -> list[float] | None:
     Returns None when not configured (caller keeps local fastembed).
     """
     endpoint = os.environ.get("EMBEDDING_ENDPOINT", "").rstrip("/")
-    api_key = os.environ.get("EMBEDDING_API_KEY", "")
-    if not endpoint or not api_key:
+    api_key = os.environ.get("EMBEDDING_API_KEY", "").strip()
+    if not endpoint:
         return None
+    # Allow empty API key for fully local OpenAI-compatible servers
     try:
-        import json
         import urllib.request
-        body = json.dumps({"input": text}).encode("utf-8")
+        body = json.dumps({"input": text, "model": os.environ.get("EMBEDDING_MODEL", "text-embedding")}).encode("utf-8")
+        headers = {"Content-Type": "application/json"}
+        if api_key:
+            headers["Authorization"] = f"Bearer {api_key}"
         req = urllib.request.Request(
             f"{endpoint}/v1/embeddings",
             data=body,
-            headers={
-                "Authorization": f"Bearer {api_key}",
-                "Content-Type": "application/json",
-            },
+            headers=headers,
             method="POST",
         )
         with urllib.request.urlopen(req, timeout=10) as resp:
@@ -258,7 +371,12 @@ def _call_remote_embedding(text: str) -> list[float] | None:
 
 
 def get_embedding(text: str) -> list[float] | None:
-    """Try local fastembed → remote endpoint (env) → None."""
+    """Try local fastembed → remote endpoint (env) → None (FTS fallback)."""
+    # Prefer remote when explicitly configured (useful on ARM without onnx wheels)
+    if os.environ.get("EMBEDDING_ENDPOINT", "").strip():
+        remote = _call_remote_embedding(text)
+        if remote:
+            return remote
     local = _get_local_embedding(text)
     if local:
         return local
@@ -280,7 +398,8 @@ def conn(agent: str | None = None) -> sqlite3.Connection:
     c = sqlite3.connect(db_path(agent))
     c.row_factory = sqlite3.Row
     c.execute("PRAGMA journal_mode=WAL")
-    c.execute("PRAGMA synchronous=OFF")
+    # NORMAL is durable enough with WAL and much safer than OFF on crash/power loss.
+    c.execute("PRAGMA synchronous=NORMAL")
     # ATTACH _shared.db for cross-agent search (silent if not exists)
     if agent != "_shared":
         _shared_path = os.path.join(HERO_PEN_DIR, "_shared.db")

@@ -21,6 +21,7 @@ from heropen.core import (
     capture_session_content,
     conn,
     db_path,
+    get_default_agent,
     get_embedding,
     init_db,
     integrity_check,
@@ -44,18 +45,18 @@ from heropen.core import (
 def _build_parser(action: str) -> argparse.ArgumentParser:
     """Build a per-command argument parser."""
     p = argparse.ArgumentParser(prog=f"heropen {action}")
-    p.add_argument("--agent", default=None, help="Agent name (default: agent)")
+    p.add_argument("--agent", default=None, help="Agent name (default: from agent-config.json)")
     return p
 
 
 def _resolve_agent(args: list[str]) -> str:
-    """Extract --agent from args list. Returns the agent name or 'agent' for default."""
+    """Extract --agent from args list. Falls back to configured default agent."""
     for i, a in enumerate(args):
         if a in ("--agent",) and i + 1 < len(args):
             return args[i + 1]
         if a.startswith("--agent="):
             return a.split("=", 1)[1]
-    return "agent"
+    return get_default_agent()
 
 
 def _tokenize(text: str) -> list[str]:
@@ -340,6 +341,17 @@ def cmd_status(args: list[str]) -> None:
 
     print(f"📊 heropen 数据库 [{agent}] 共{total}条 (有embedding: {with_emb}/{total})")
     print(f"   🧠 知识图谱: {ent_count} 实体, {rel_count} 关系")
+    try:
+        from heropen.core import get_embedding_status
+        emb = get_embedding_status()
+        flag = "✓" if emb.get("available") else "·"
+        print(
+            f"   {flag} 向量后端: {emb.get('backend')} "
+            f"({emb.get('system')}/{emb.get('arch')})"
+            + ("" if emb.get("available") else f" — {emb.get('hint')}")
+        )
+    except Exception:
+        pass
     print(f"\n   最近日期:")
     for d, n in by_date:
         print(f"     {d}: {n}条")
@@ -963,16 +975,30 @@ def cmd_doctor(args: list[str]) -> None:
         else:
             _warn(f"记忆总量 {total_chars:,} 字符 — 超出 {', '.join(exceeded)} 模型容量上限；跨模型切换时需注意上下文截断")
 
-    # ── 4. Embedding 迁移数据税 ──
-    print(f"\n{_B}── 4. Embedding 迁移数据税 ──{_N}")
-    ep = _os.environ.get("EMBEDDING_ENDPOINT")
-    if not ep:
-        _ok("未配置 EMBEDDING_ENDPOINT — 使用本地 fastembed，无迁移数据税")
-    else:
-        if total_entries == 0:
-            _ok(f"已配置自托管 endpoint（{ep}）— 当前无记忆，切换无成本")
+    # ── 4. Embedding / ARM64 ──
+    print(f"\n{_B}── 4. Embedding 与架构 ──{_N}")
+    try:
+        from heropen.core import get_embedding_status
+        emb = get_embedding_status(refresh=True)
+        arch_line = f"{emb.get('system')} / {emb.get('arch')}"
+        if emb.get("arm64"):
+            print(f"  架构：{arch_line}（ARM64）")
         else:
-            _warn(f"已配置自托管 endpoint（{ep}）— 若切换端点，需对 {total_entries} 条记忆重新嵌入（数据税）；迁移前请评估收益")
+            print(f"  架构：{arch_line}")
+        if emb.get("available"):
+            _ok(f"向量后端可用：{emb.get('backend')} — {emb.get('detail') or 'ok'}")
+        else:
+            _warn(
+                f"本地向量引擎不可用 — {emb.get('detail') or '未安装 fastembed/onnxruntime'}；"
+                f"记忆仍可用全文检索。建议：{emb.get('hint')}"
+            )
+        ep = _os.environ.get("EMBEDDING_ENDPOINT")
+        if ep:
+            _ok(f"已配置自托管 endpoint（{ep}）")
+            if total_entries > 0:
+                _warn(f"若切换端点，需对 {total_entries} 条记忆重新嵌入（数据税）")
+    except Exception as e:
+        _warn(f"无法检测 embedding 状态：{e}")
 
     # ── 5. 端口安全 ──
     print(f"\n{_B}── 5. 端口安全 ──{_N}")

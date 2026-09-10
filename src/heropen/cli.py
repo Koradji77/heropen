@@ -18,7 +18,23 @@ from pathlib import Path
 from heropen.core import HERO_PEN_DIR, __version__ as _HP_VER
 
 
+def _configure_stdio() -> None:
+    """Avoid UnicodeEncodeError on Windows GBK consoles (emoji / CJK)."""
+    for stream in (sys.stdout, sys.stderr):
+        reconfigure = getattr(stream, "reconfigure", None)
+        if not callable(reconfigure):
+            continue
+        try:
+            reconfigure(encoding="utf-8", errors="replace")
+        except Exception:
+            try:
+                reconfigure(errors="replace")
+            except Exception:
+                pass
+
+
 def main():
+    _configure_stdio()
     args = sys.argv[1:]
     if not args:
         config_path = Path(HERO_PEN_DIR) / "agent-config.json"
