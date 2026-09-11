@@ -11,6 +11,11 @@ import os
 import re
 import sys
 
+# Avoid UnicodeEncodeError on Windows GBK consoles during release checks.
+for _stream in (sys.stdout, sys.stderr):
+    if hasattr(_stream, "reconfigure"):
+        _stream.reconfigure(encoding="utf-8", errors="replace")
+
 ROOT = sys.argv[1] if len(sys.argv) > 1 else "."
 SRC = os.path.join(ROOT, "src")
 

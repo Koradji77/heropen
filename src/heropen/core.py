@@ -392,7 +392,8 @@ def cosine_similarity(a: list[float], b: list[float]) -> float:
 
 # ─── Database connection ───────────────────────────────────────
 
-def conn(agent: str | None = None) -> sqlite3.Connection:
+def _connect(agent: str | None = None) -> sqlite3.Connection:
+    """Open a SQLite connection with pragmas (no schema creation)."""
     if agent is None:
         agent = get_default_agent()
     c = sqlite3.connect(db_path(agent))
@@ -409,6 +410,22 @@ def conn(agent: str | None = None) -> sqlite3.Connection:
             except Exception:
                 pass
     return c
+
+
+def conn(agent: str | None = None) -> sqlite3.Connection:
+    """Open a connection, lazily creating the schema on a brand-new database.
+
+    This makes read-only CLI commands and the MCP server work immediately
+    after install, before the user ever runs ``heropen init``.
+    """
+    if agent is None:
+        agent = get_default_agent()
+    path = db_path(agent)
+    # sqlite3 leaves a 0-byte file when it connects to a path that was never
+    # initialized, so treat both "missing" and "empty" as a fresh database.
+    if (not os.path.exists(path)) or os.path.getsize(path) == 0:
+        init_db(agent)
+    return _connect(agent)
 
 
 # ─── Schema version — NEVER change existing schema, only ADD ──────
@@ -455,7 +472,7 @@ def init_db(agent: str | None = None) -> None:
     auto_backup(agent)
 
     _ensure_entities_file()
-    c = conn(agent)
+    c = _connect(agent)
 
     version = _get_schema_version(c)
 

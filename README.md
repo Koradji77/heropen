@@ -15,8 +15,8 @@
 ## 安装
 
 ```bash
-pip install heropen                 # 核心：全文检索，任意架构（含 ARM64）可装
-pip install 'heropen[embedding]'    # 可选：本地向量（依赖 onnxruntime）
+pip install heropen                 # 核心：MCP + 全文检索，纯 Python 依赖，任意架构（含 ARM64）可装
+pip install 'heropen[embedding]'    # 可选：本地向量（额外引入 onnxruntime / fastembed）
 ```
 
 ### ARM64 说明

@@ -18,7 +18,11 @@ classifiers = [
     "Topic :: Software Development :: Libraries :: Python Modules",
 ]
 
-dependencies = []
+dependencies = [
+    # Pure-Python MCP runtime; required by `heropen mcp` / `heropen-mcp`.
+    # Keep native vector engine (fastembed/onnxruntime) optional for ARM ports.
+    "mcp>=1.6",
+]
 
 [project.optional-dependencies]
 embedding = [

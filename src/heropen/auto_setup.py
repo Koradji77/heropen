@@ -9,14 +9,42 @@ import sys
 from datetime import datetime
 from pathlib import Path
 
-_LOG_PATH = os.path.join(os.path.expanduser("~/.heropen"), "setup.log")
+def _get_hero_pen_dir() -> str:
+    """Match core.py exactly: $HERO_PEN_DIR env or ~/.heropen."""
+    env = os.environ.get("HERO_PEN_DIR", "")
+    if env:
+        return env
+    return os.path.join(str(Path.home()), ".heropen")
+
+
+def _log_path() -> str:
+    return os.path.join(_get_hero_pen_dir(), "setup.log")
+
+
+_LOG_PATH = _log_path()
+
+
+def _safe_print(msg: str) -> None:
+    """Print without crashing non-UTF-8 Windows consoles during interpreter startup."""
+    try:
+        stream = sys.stdout
+        if hasattr(stream, "reconfigure"):
+            stream.reconfigure(encoding="utf-8", errors="replace")
+        print(msg, flush=True)
+    except Exception:
+        # A .pth hook must never break the user's Python interpreter.
+        try:
+            sys.stdout.buffer.write(msg.encode("utf-8", errors="replace") + b"\n")
+            sys.stdout.buffer.flush()
+        except Exception:
+            _log(f"stdout unavailable: {msg}")
 
 
 def _log(msg: str) -> None:
     """Write a timestamped log entry to setup.log."""
     try:
-        os.makedirs(os.path.dirname(_LOG_PATH), exist_ok=True)
-        with open(_LOG_PATH, "a", encoding="utf-8") as f:
+        os.makedirs(os.path.dirname(_log_path()), exist_ok=True)
+        with open(_log_path(), "a", encoding="utf-8") as f:
             f.write(f"[{datetime.now().isoformat()}] {msg}\n")
     except OSError:
         pass
@@ -75,7 +103,7 @@ def run() -> None:
         return
 
     _log("auto_setup started")
-    print("🖊  heropen 正在自动配置...", flush=True)
+    _safe_print("🖊  heropen 正在自动配置...")
 
     # Step 1: Agent detection and MCP configuration
     _log("step 1: agent detection start")
@@ -85,9 +113,9 @@ def run() -> None:
         _log("step 1: agent detection OK")
     except Exception as e:
         _log(f"step 1 FAILED: {e}")
-        print(f"  ❌ 自动检测 Agent 失败：{e}", flush=True)
-        print(f"     查看日志：{_LOG_PATH}", flush=True)
-        print(f"     或运行 heropen diagnose 排查问题。", flush=True)
+        _safe_print(f"  ❌ 自动检测 Agent 失败：{e}")
+        _safe_print(f"     查看日志：{_log_path()}")
+        _safe_print("     或运行 heropen diagnose 排查问题。")
         _mark_done()
         _create_pending_marker()
         return
@@ -115,7 +143,7 @@ def run() -> None:
         pass
 
     # Success feedback
-    print("  ✅ heropen 配置成功！重启你的 AI 助手后它就会拥有长期记忆。", flush=True)
-    print(f"     工具已注册：search_memory / add_memory / list_memory / health", flush=True)
-    print(f"     日志文件：{_LOG_PATH}", flush=True)
+    _safe_print("  ✅ heropen 配置成功！重启你的 AI 助手后它就会拥有长期记忆。")
+    _safe_print("     工具已注册：search_memory / add_memory / list_memory / health")
+    _safe_print(f"     日志文件：{_log_path()}")
     _log("auto_setup completed successfully")

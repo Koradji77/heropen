@@ -181,7 +181,7 @@ def cmd_recall(args: list[str]) -> None:
         print("用法: heropen recall \"查询词\" [--agent 名称] [--limit 数量] [--fts] [--graph] [--date YYYY-MM-DD] [--tag 标签] [--last N] [--today]")
         return
     # Simple arg parsing for recall
-    agent = "agent"
+    agent = get_default_agent()
     query_parts: list[str] = []
     opts = {"fts": False, "graph": False, "date": None, "tag": None, "last": None, "today": False, "limit": 10}
 
@@ -261,7 +261,7 @@ def cmd_add(args: list[str]) -> None:
     if _has_help(args):
         print("用法: heropen add --content \"记忆内容\" [--section 分类] [--tags 标签] [--agent 名称]")
         return
-    agent = "agent"
+    agent = get_default_agent()
     section = ""
     content = ""
     tags = ""
@@ -436,7 +436,7 @@ def cmd_export(args: list[str]) -> None:
 
 
 def cmd_import(args: list[str]) -> None:
-    agent = "agent"
+    agent = get_default_agent()
     file_path = ""
 
     i = 0
@@ -512,7 +512,7 @@ def cmd_import(args: list[str]) -> None:
 
 
 def cmd_delete(args: list[str]) -> None:
-    agent = "agent"
+    agent = get_default_agent()
     entry_id: int | None = None
 
     i = 0
@@ -560,7 +560,7 @@ def cmd_delete(args: list[str]) -> None:
 
 
 def cmd_embed(args: list[str]) -> None:
-    agent = "agent"
+    agent = get_default_agent()
     force = False
 
     i = 0
@@ -615,7 +615,7 @@ def cmd_session(args: list[str]) -> None:
     """heropen session check --context "..."
        heropen session recover [--limit 3]
     """
-    agent = "agent"
+    agent = get_default_agent()
     action = ""
     context_summary = ""
     active_task = ""
@@ -880,7 +880,7 @@ def cmd_doctor(args: list[str]) -> None:
       5. 端口安全
     """
     # 解析 --agent
-    agent = "agent"
+    agent = get_default_agent()
     i = 0
     while i < len(args):
         a = args[i]
@@ -1002,7 +1002,11 @@ def cmd_doctor(args: list[str]) -> None:
 
     # ── 5. 端口安全 ──
     print(f"\n{_B}── 5. 端口安全 ──{_N}")
-    _warn("若以 `heropen mcp --http` 启动，MCP 服务默认绑定 0.0.0.0:8090（暴露到局域网/公网）；仅本机使用请加防火墙或绑定 127.0.0.1")
+    mcp_host = _os.environ.get("HEROPEN_MCP_HOST", "127.0.0.1")
+    if mcp_host in ("127.0.0.1", "::1", "localhost"):
+        _ok(f"MCP HTTP/SSE 默认绑定 loopback（{mcp_host}:8090）；可用 --host 或 HEROPEN_MCP_HOST 显式覆盖")
+    else:
+        _warn(f"MCP HTTP/SSE 将绑定 {mcp_host}:8090（暴露到局域网/公网）；仅本机使用建议 --host 127.0.0.1")
     _ok("viewer（heropen viewer）硬编码仅绑定 loopback（127.0.0.1）— 已满足 C2 安全约束")
 
     print(f"\n{_BOLD}自检完成{_N}")
