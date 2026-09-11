@@ -18,7 +18,7 @@ from heropen import __version__ as HP_VERSION
 SERVER_DIR = os.path.dirname(os.path.abspath(__file__))
 HOST = "127.0.0.1"
 PORT = 9020
-FREE_AGENT_LIMIT = 2  # fallback; prefer get_agent_limit() at runtime
+FREE_AGENT_LIMIT = 6  # fallback; prefer get_agent_limit() at runtime
 
 # ── AI assistant scanner ──
 

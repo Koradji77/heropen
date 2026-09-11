@@ -290,9 +290,9 @@ function renderGrid(){
       </div>
       <div class="agent-stat"><b>${a.mem}</b> 条<br><span style="color:#5C544A;">${esc(a.last)}</span></div>
     </div>`).join('') || '<div class="empty">未发现本机 Agent。</div>';
-  const lockCount = (DATA.tierLabel==='免费版') ? (6 - DATA.agents.length) : 0;
+  const lockCount = (DATA.tierLabel==='免费版') ? (DATA.free_limit - DATA.agents.length) : 0;
   document.getElementById('locked').innerHTML = lockCount>0
-    ? `<div class="locked">升级 <b>Plus</b> 可显示最多 <b>6</b> 个 Agent，并开启共享记忆域（跨 Agent 互通）。当前免费版显示前 2 个。</div>` : '';
+    ? `<div class="locked">免费版已支持最多 <b>${DATA.free_limit}</b> 个 Agent 的私有记忆域。升级 <b>Plus</b> 可开启 <b>skill 收集与共享</b>（跨 Agent 复用你的方法论与记忆）。</div>` : '';
 }
 function drill(i){
   const a = DATA.agents[i];

@@ -18,7 +18,7 @@ from datetime import date, datetime
 
 # ─── Paths ────────────────────────────────────────────────────
 
-__version__ = "1.9.3"
+__version__ = "1.9.4"
 _HPD = os.environ.get("HERO_PEN_DIR", "")
 if _HPD:
     HERO_PEN_DIR = _HPD
@@ -30,9 +30,10 @@ BACKUP_KEEP_LOCAL = 3
 BACKUP_KEEP_REMOTE = 7
 
 # ─── Agent display / install limits (config-driven, no code traps) ─
-# basic → 2 isolated agents in UI/install; plus/pro → 6.
+# Agent count is uniform across editions (basic=6, plus/pro=6); tiering is
+# feature-based — Plus adds skill collection & sharing, not more agents.
 # Override with env HEROPEN_AGENT_LIMIT (positive int).
-FREE_AGENT_LIMIT = 2
+FREE_AGENT_LIMIT = 6
 PLUS_AGENT_LIMIT = 6
 OVERFLOW_AGENT = "_shared"
 

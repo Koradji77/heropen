@@ -70,7 +70,7 @@ heropen diagnose                                              # 诊断问题
 
 本地优先不是 heropen 独有的卖点——已经有十几个同类项目走 SQLite + MCP。heropen 真正占住、且别人还没占的位置是这三件事：
 
-- **多 agent 的私有域 / 共享域分层**。免费层给 2 个完全私有的 agent（Hermes / WorkBuddy 这类高频常驻 agent 各占一个隔离库），再加一个可选的共享域（`_shared`）让 agent 之间按需交换知识。大多数竞品只有一个扁平的命名空间。
+- **多 agent 的私有域 / 共享域分层**。免费层给 6 个完全私有的 agent（Hermes / WorkBuddy 这类高频常驻 agent 各占一个隔离库），再加一个可选的共享域（`_shared`）让 agent 之间按需交换知识。免费与 Plus 的差别不在数量、而在功能（Plus 提供技能收集与共享等真功能）。大多数竞品只有一个扁平的命名空间。
 - **对话前的时间感知**（v1.8.7 起）。agent 每次开场会自动拿到本地时间、时段词、距上次对话间隔、是否跨睡眠周期——交互侧的时间基准，目前没人做。
 - **零依赖的安装面**。`pip install heropen` 一行即可，不需要 Docker、不需要 Postgres、不需要 Ollama。
 
