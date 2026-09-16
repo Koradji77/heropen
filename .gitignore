@@ -11,3 +11,8 @@ dist/
 .license
 .venv/
 venv/
+
+# Scratch / local-only working dirs — must never ship in sdist or get committed.
+# (hatchling's sdist follows VCS ignore rules; pyproject.toml also excludes these.)
+_tmp_*
+

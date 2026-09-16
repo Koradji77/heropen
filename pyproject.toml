@@ -48,6 +48,13 @@ packages = ["src/heropen"]
 [tool.hatch.build.targets.wheel.force-include]
 "src/heropen/heropen_auto_setup.pth" = "heropen_auto_setup.pth"
 
+# Scratch dirs (_tmp_*) are local-only; keep them out of the sdist even if the
+# VCS ignore rules are unavailable (e.g. building from an exported tarball).
+[tool.hatch.build.targets.sdist]
+exclude = [
+  "/_tmp_*",
+]
+
 [project.urls]
 Homepage = "https://heropen.net"
 Documentation = "https://heropen.net/heropen/docs/"
