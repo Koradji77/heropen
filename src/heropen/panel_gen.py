@@ -7,7 +7,8 @@ heropen.panel_gen — 本地面板生成器（Plan-C / Agent 下钻）
 渲染成方案 C（金棕、agent 网格 → 私有记忆域下钻）的静态 HTML，
 写到 ~/.heropen/panel.html，全程本地、不出本机、不登录。
 
-免费(basic) 显示前 FREE_AGENT_LIMIT(=2) 个 agent；plus 显示前 6 个。
+免费(basic) 与 Plus 均显示前 FREE_AGENT_LIMIT(=6) 个 agent——档位差别在功能
+（Plus 提供 skill 收集与共享），不在 agent 数量。
 调用 build_and_open() 会生成文件并用默认浏览器打开（file:// 协议），
 作为 ``heropen panel`` 命令的底层实现。传 ``open_browser=False`` 则只生成
 文件不打开，适用于无 GUI / 自动化流水线（如 NAS 发版自检）场景。
@@ -243,7 +244,7 @@ TEMPLATE = r"""<!DOCTYPE html>
   <div class="verline" id="verLine"></div>
   <div class="stats" id="stats"></div>
   <div class="nav-item active">🤖 Agent 状态</div>
-  <div class="hint">只读视图。记忆由 agent 对话时自动写入，无需手动录入。<br>免费版显示 2 个 Agent，Plus 版显示 6 个。</div>
+  <div class="hint">只读视图。记忆由 agent 对话时自动写入，无需手动录入。<br>免费版与 Plus 版均支持 6 个 Agent 私有记忆域；Plus 另含 skill 收集与共享。</div>
 </div>
 <div class="main">
   <div id="updBanner"></div>
@@ -290,9 +291,9 @@ function renderGrid(){
       </div>
       <div class="agent-stat"><b>${a.mem}</b> 条<br><span style="color:#5C544A;">${esc(a.last)}</span></div>
     </div>`).join('') || '<div class="empty">未发现本机 Agent。</div>';
-  const lockCount = (DATA.tierLabel==='免费版') ? (6 - DATA.agents.length) : 0;
+  const lockCount = (DATA.tierLabel==='免费版') ? (DATA.free_limit - DATA.agents.length) : 0;
   document.getElementById('locked').innerHTML = lockCount>0
-    ? `<div class="locked">升级 <b>Plus</b> 可显示最多 <b>6</b> 个 Agent，并开启共享记忆域（跨 Agent 互通）。当前免费版显示前 2 个。</div>` : '';
+    ? `<div class="locked">免费版已支持最多 <b>${DATA.free_limit}</b> 个 Agent 的私有记忆域。升级 <b>Plus</b> 可开启 <b>skill 收集与共享</b>（跨 Agent 复用你的方法论与记忆）。</div>` : '';
 }
 function drill(i){
   const a = DATA.agents[i];

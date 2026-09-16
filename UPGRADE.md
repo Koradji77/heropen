@@ -2,9 +2,16 @@
 
 ## v1.9.3 → v1.9.5
 
-> 说明：本地曾短暂标为 1.9.4，未正式发版；对外补丁号定为 **1.9.5**。发版由 AK 负责（GitHub + PyPI），开发侧不再自行 push tag / 上传。
+> 说明：**1.9.4 已于 2026-09-11 发布**（GitHub tag `v1.9.4` + PyPI）。1.9.5 在 1.9.4 基础上修复真实 agent 安装反馈，并**补回** 1.9.4 分支遗漏的免费额度改动（当时另一条开发线从 1.9.3 分出，未包含 1.9.4 提交）。发版由 AK 负责（GitHub + PyPI），开发侧不再自行 push tag / 上传。
 
-### 改动摘要（来自真实 agent 安装反馈）
+### 改动摘要
+
+**A. 免费额度与分档口径（1.9.4 内容，本版合并进来）**
+
+- **免费版 agent 数量统一为 6**：`FREE_AGENT_LIMIT` 由 2 改为 6，与 Plus/Pro 一致（各档均为 6 个隔离 agent）。消费版定价已从「按数量分」转为「按功能分」（Plus 提供 skill 收集与共享），数量不再作为分档边界。额度仍可由 `agent-config.json` 的 `edition` 或环境变量 `HEROPEN_AGENT_LIMIT` 覆盖。
+- **升级引导文案同步**：面板「升级 Plus」提示改为功能向（skill 收集与共享），不再以「多显示 Agent」为卖点。
+
+**B. 真实 agent 安装反馈修复**
 
 - **钉死 mcp 上界**：依赖改为 `mcp>=1.6,<2`。mcp 2.x 把 `FastMCP` 改名为 `MCPServer` 并搬迁模块，裸 `mcp>=1.6` 会装到 2.x，导致 `ModuleNotFoundError: mcp.server.fastmcp`、MCP 起不来。导入失败时给出明确降级提示。
 - **修复 `heropen mcp`**：此前把字面量 `mcp` 漏进 argparse，报 `unrecognized arguments: mcp`。现在 CLI 与 `heropen-mcp` 都能启动；文档/安装引导统一推荐 `{"command":"heropen-mcp","args":[]}`。
@@ -25,6 +32,7 @@ pip install --upgrade 'heropen' 'mcp>=1.6,<2'
 - 已有记忆数据无需迁移。
 - 已缓存的向量模型行为不变；未就绪时写入仍成功，仅暂无 embedding 列。
 - MCP 客户端若仍写 `{"command":"heropen","args":["mcp"]}`，1.9.5 起可工作；仍建议改为 `heropen-mcp`。
+- 免费版可见的 agent 数量由 2 增至 6（1.9.4 起生效）；已存在的 agent 库路径不变，无需迁移。
 
 ---
 
@@ -35,7 +43,7 @@ pip install --upgrade 'heropen' 'mcp>=1.6,<2'
 - **Windows CLI**：启动时把 stdout/stderr 设为 UTF-8（`errors=replace`），修复 GBK 控制台打印 emoji 导致的 `UnicodeEncodeError`（如 `heropen status`）；同样加固安装后由 `.pth` 触发的自配置流程与零外联断言脚本，避免解释器启动阶段因编码中断。
 - **全新库懒初始化**：装完无需先 `heropen init`，直接 `heropen status` / `heropen recall` 或 MCP 工具调用会自动建表（修复全新空库 `no such table: entries` 崩溃）。
 - **默认 agent 统一**：所有 CLI 子命令未传 `--agent` 时都读取 `agent-config.json` 的默认 agent（此前 `recall`/`add`/`doctor` 等仍写死 `agent`）。
-- **去掉「改常量就惩罚」逻辑**：`FREE_AGENT_LIMIT` 不再暗中把所有 agent 并进 `_shared`；额度改由 `agent-config.json` 的 `edition`（basic=2 / plus|pro=6）或环境变量 `HEROPEN_AGENT_LIMIT` 控制。
+- **去掉「改常量就惩罚」逻辑**：`FREE_AGENT_LIMIT` 不再暗中把所有 agent 并进 `_shared`；额度改由 `agent-config.json` 的 `edition`（basic=6 / plus|pro=6，各档 agent 数量统一，按功能分档）或环境变量 `HEROPEN_AGENT_LIMIT` 控制。
 - **SQLite**：`PRAGMA synchronous` 从 `OFF` 改为 `NORMAL`（WAL 下更安全）。
 - **MCP HTTP**：默认绑定 `127.0.0.1:8090`（不再默认 `0.0.0.0`）；可用 `--host` / `--port` 或 `HEROPEN_MCP_HOST` / `HEROPEN_MCP_PORT` 覆盖；非本机绑定时开启 DNS rebinding 防护。`doctor` 端口提示同步更新。
 - **ARM64 可安装**：`fastembed` 改回**可选依赖**（`heropen[embedding]`）；MCP 运行时（`mcp`，纯 Python）保留为核心依赖，确保裸装即可 `heropen-mcp`。`pip install heropen` 在 Linux aarch64 / Windows ARM64 / Apple Silicon 上均可装；无 onnx wheel 时自动走 FTS 或 `EMBEDDING_ENDPOINT`。新增 `get_embedding_status()` / `heropen doctor` 架构检测与安装提示。
