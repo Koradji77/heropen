@@ -53,9 +53,15 @@ heropen panel                                  # 打开本地记忆面板
 
 ## 记忆最佳实践
 
-- agent 开场先调 `prime_conversation` 或 `search_memory`（二者任一即满足时间感知约定）。
-- 主动存：用户分享偏好 / 约定 / 项目信息时，调 `add_memory` 而不是等用户说"记住"。
-- 数据主权：记忆在本机 `~/.heropen/`；`heropen export` 可带走，`heropen delete <id>` 可删。heropen 不上传、不追踪。
+完整官方用法（SSOT、开场召回、自由标签、下沉）：见仓库 [`docs/usage-ssot-zh.md`](../docs/usage-ssot-zh.md)。
+
+摘要：
+
+- **SSOT**：事实只存 heropen；热层只留铁律 + 高频短句 + 检索指针，禁止双写全文。
+- **开场**：先 `prime_conversation`，再按主题 `search_memory`；不搜就等于库里没有。
+- **写入**：主动 `add_memory`；主打自由 `tags`，`section` 可选粗分。
+- **下沉**：热层将满时优先搬低频/长/过时内容到 heropen，热层留指针。
+- 数据主权：记忆在本机 `~/.heropen/`；`heropen export` 可带走。heropen 不上传、不追踪。
 
 ## 合规提醒
 

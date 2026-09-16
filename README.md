@@ -40,6 +40,9 @@ heropen status                                                # 看状态
 heropen diagnose                                              # 诊断问题
 ```
 
+**怎么用才记得住**：请读官方使用方法（SSOT）—— [docs/usage-ssot-zh.md](docs/usage-ssot-zh.md)。  
+要点：事实只进 heropen；热层只留铁律 + 高频 + 指针；每次开场先 `prime` 再 `search`；主打自由标签。
+
 首次 `add` **不会**同步下载约 95MB 的向量模型；写入立即走全文检索。需要本地语义检索时再显式运行：
 
 ```bash
