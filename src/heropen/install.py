@@ -663,15 +663,15 @@ heropen 是一个 AI 长期记忆系统。装在电脑上之后，AI 助手可�
 {{
   "mcpServers": {{
     "heropen": {{
-      "command": "heropen",
-      "args": ["mcp"],
+      "command": "heropen-mcp",
+      "args": [],
       "disabled": false
     }}
   }}
 }}
 
-如果 "heropen" 命令找不到，把 command 改成 "python3" 或 "python"，
-args 改成 ["-m", "heropen", "mcp"]。
+如果 "heropen-mcp" 命令找不到，把 command 改成该 Python 环境里的绝对路径，
+或改用 {{"command": "python", "args": ["-m", "heropen.mcp_server"]}}。
 
 【步骤 4 — 验证】
 重启你（这个 AI 助手）后，运行以下命令测试连接：

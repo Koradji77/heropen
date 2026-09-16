@@ -8,7 +8,7 @@
 
 ## 30 秒看懂
 
-- **一行装好，零配置**：`pip install heropen`，重启 agent 即用，不用 Docker / Postgres / API key。
+- **一行装好**：`pip install heropen`，不用 Docker / Postgres / API key。常见客户端可自动写入 MCP 配置；Hermes 等需手动接 `heropen-mcp`。
 - **你的 agent 从此有长期记忆**：跨会话记得人、记得事、记得上下文——不再「聊完就忘」。
 - **数据 100% 留本机**：无遥测、无云端同步、无账单。记忆只在你机器上，只有你拿得走。
 
@@ -29,7 +29,7 @@ pip install 'heropen[embedding]'    # 可选：本地向量（额外引入 onnxr
 
 没有本地向量时，`search` / `recall` 会自动降级为全文检索，**不影响记忆存取**。
 
-重启你的 agent，完成。首次启动会自动探测你的 agent（Claude Code、Cursor、Windsurf 或任意 MCP 客户端），建好数据库并注册记忆工具。
+重启你的 agent，完成。首次启动会自动探测常见客户端（Claude Code、Cursor、Windsurf、WorkBuddy 等固定配置路径）并注册记忆工具。**Hermes 等自定义 `mcp_servers` 路径不会自动写入**，请按下方「接入你的 agent」手动配置。
 
 ## 30 秒快速上手
 
@@ -40,17 +40,28 @@ heropen status                                                # 看状态
 heropen diagnose                                              # 诊断问题
 ```
 
+首次 `add` **不会**同步下载约 95MB 的向量模型；写入立即走全文检索。需要本地语义检索时再显式运行：
+
+```bash
+pip install 'heropen[embedding]'
+heropen embed          # 下载模型并为已有条目生成 embedding
+```
+
 ## 接入你的 agent（MCP）
 
-兼容任意支持 MCP 的 agent。v1.8+ 自动探测并配置，无需手动步骤。
+推荐使用独立入口 `heropen-mcp`（stdio）。`heropen mcp` 也可，但 MCP 客户端配置里请用下面这种：
 
 ```json
 {
   "mcpServers": {
-    "heropen": { "command": "heropen", "args": ["mcp"] }
+    "heropen": { "command": "heropen-mcp", "args": [] }
   }
 }
 ```
+
+若 `heropen-mcp` 不在 PATH（例如 `uv tool install` 装到隔离环境），把 `command` 换成该环境里的绝对路径。
+
+对 Claude Code / Cursor / Windsurf / WorkBuddy：`heropen auto-setup` 会尝试写入已知配置路径。对 **Hermes** 等自有配置格式，请手动把上面的块加进你的 `mcp_servers`，再重启 agent。
 
 重启 agent，它就有了记忆。把一条 bug 修复存一次，跨会话永久记住。
 

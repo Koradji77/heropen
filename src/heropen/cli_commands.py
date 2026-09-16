@@ -578,6 +578,13 @@ def cmd_embed(args: list[str]) -> None:
             force = True
         i += 1
 
+    # Explicit embed command is the opt-in path for the ~95MB model download.
+    os.environ["HEROPEN_ALLOW_MODEL_DOWNLOAD"] = "1"
+    from heropen.core import _local_embedding_model_cached, get_embedding_status
+    if not _local_embedding_model_cached():
+        print("⬇️  首次将下载本地向量模型（约 95MB，镜像 hf-mirror.com）…")
+        print("   若长时间无进展，可设 EMBEDDING_ENDPOINT 或仅用全文检索。")
+
     c = conn(agent)
     if force:
         cur = c.execute("SELECT id, content, tags, section FROM entries")
@@ -587,7 +594,13 @@ def cmd_embed(args: list[str]) -> None:
     c.close()
 
     if not rows:
-        print("✅ 所有记录已有embedding，无需生成")
+        # Still warm the model cache even when every row already has embeddings.
+        probe = get_embedding("heropen embed warmup")
+        if probe:
+            print("✅ 所有记录已有embedding；本地模型已就绪")
+        else:
+            st = get_embedding_status(refresh=True)
+            print(f"✅ 所有记录已有embedding；向量引擎：{st.get('detail') or st.get('backend')}")
         return
 
     print(f"🔄 正在为 {len(rows)} 条记录生成embedding...")

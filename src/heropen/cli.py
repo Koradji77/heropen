@@ -93,7 +93,8 @@ def main():
         cmd_import(args[1:])
     elif cmd == "mcp":
         from heropen.mcp_server import main as mcp_main
-        mcp_main()
+        # Pass remaining argv (may still start with "mcp"); mcp_server strips it.
+        mcp_main(args)
     elif cmd in ("--help", "-h", "help"):
         print_help()
     elif cmd in ("--version", "-V", "version"):

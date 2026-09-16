@@ -18,7 +18,7 @@ from datetime import date, datetime
 
 # ─── Paths ────────────────────────────────────────────────────
 
-__version__ = "1.9.3"
+__version__ = "1.9.4"
 _HPD = os.environ.get("HERO_PEN_DIR", "")
 if _HPD:
     HERO_PEN_DIR = _HPD
@@ -232,6 +232,45 @@ LOCAL_EMBEDDING_MODEL = "BAAI/bge-small-zh-v1.5"
 _EMBEDDING_STATUS_CACHE: dict | None = None
 
 
+def _embedding_cache_dir() -> str:
+    return os.path.join(HERO_PEN_DIR, "models")
+
+
+def _embedding_ready_marker() -> str:
+    return os.path.join(_embedding_cache_dir(), ".heropen_model_ready")
+
+
+def _local_embedding_model_cached() -> bool:
+    """True only after a prior successful model load wrote the ready marker.
+
+    Directory heuristics alone are unsafe: a partial HF download still looks
+    like files on disk, and TextEmbedding() will re-fetch and hang add/recall.
+    """
+    marker = _embedding_ready_marker()
+    if not os.path.isfile(marker):
+        return False
+    try:
+        with open(marker, encoding="utf-8") as f:
+            return LOCAL_EMBEDDING_MODEL in f.read()
+    except OSError:
+        return False
+
+
+def _mark_local_embedding_ready() -> None:
+    try:
+        os.makedirs(_embedding_cache_dir(), exist_ok=True)
+        with open(_embedding_ready_marker(), "w", encoding="utf-8") as f:
+            f.write(LOCAL_EMBEDDING_MODEL + "\n")
+    except OSError:
+        pass
+
+
+def _allow_model_download() -> bool:
+    """Explicit opt-in for synchronous model download (default: off)."""
+    val = os.environ.get("HEROPEN_ALLOW_MODEL_DOWNLOAD", "").strip().lower()
+    return val in ("1", "true", "yes", "on")
+
+
 def _platform_triplet() -> tuple[str, str]:
     """Return (system, machine) e.g. ('Linux', 'aarch64')."""
     import platform
@@ -307,9 +346,17 @@ def get_embedding_status(*, refresh: bool = False) -> dict:
     try:
         from fastembed import TextEmbedding  # type: ignore  # noqa: F401
         status["fastembed"] = True
-        status["available"] = True
-        status["backend"] = "fastembed"
-        status["detail"] = f"本地模型 {LOCAL_EMBEDDING_MODEL}"
+        if _local_embedding_model_cached() or _allow_model_download():
+            status["available"] = True
+            status["backend"] = "fastembed"
+            status["detail"] = f"本地模型 {LOCAL_EMBEDDING_MODEL}"
+        else:
+            status["backend"] = "fastembed-pending"
+            status["detail"] = (
+                f"fastembed 已装但模型未缓存；写入走 FTS，"
+                f"运行 heropen embed 或设 HEROPEN_ALLOW_MODEL_DOWNLOAD=1 再下载"
+            )
+            status["hint"] = "heropen embed  # 显式下载本地向量模型（约 95MB）"
     except Exception as exc:
         status["detail"] = f"fastembed 不可用: {exc}"
         status["hint"] = embedding_install_hint()
@@ -319,16 +366,23 @@ def get_embedding_status(*, refresh: bool = False) -> dict:
 
 
 def _get_local_embedding(text: str) -> list[float] | None:
-    """Local fastembed (CPU, offline, no PyTorch). Returns None on ARM without wheels."""
+    """Local fastembed (CPU, offline, no PyTorch). Returns None on ARM without wheels.
+
+    Never downloads the ~95MB model during add/recall unless the model is
+    already marked ready or HEROPEN_ALLOW_MODEL_DOWNLOAD=1 is set.
+    """
     try:
+        if not _local_embedding_model_cached() and not _allow_model_download():
+            return None
         os.environ.setdefault("HF_ENDPOINT", "https://hf-mirror.com")
         from fastembed import TextEmbedding  # type: ignore
         if not hasattr(_get_local_embedding, "_model"):
             _get_local_embedding._model = TextEmbedding(
                 model_name=LOCAL_EMBEDDING_MODEL,
                 max_length=512,
-                cache_dir=os.path.join(HERO_PEN_DIR, "models"),
+                cache_dir=_embedding_cache_dir(),
             )
+            _mark_local_embedding_ready()
         emb = list(_get_local_embedding._model.embed(text))[0]
         return emb.tolist() if hasattr(emb, "tolist") else list(emb)
     except Exception:

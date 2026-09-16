@@ -214,7 +214,15 @@ def build_conversation_primer(agent: str | None = None) -> str:
 
 
 def create_mcp_server():
-    from mcp.server.fastmcp import FastMCP
+    try:
+        from mcp.server.fastmcp import FastMCP
+    except ImportError as exc:
+        raise SystemExit(
+            "heropen requires mcp 1.x (FastMCP). "
+            "mcp 2.x renamed FastMCP → MCPServer and is not yet supported.\n"
+            "Fix: pip install 'mcp>=1.6,<2'\n"
+            f"Import error: {exc}"
+        ) from exc
     _PRIMING_INSTRUCTIONS = (
         "⏱ 时间感知强制约定（heropen）：\n"
         "在【每一次】对话/会话开场时，你必须先调用 prime_conversation 工具获取「对话前时间上下文」，"
@@ -585,7 +593,17 @@ def create_mcp_server():
     return mcp
 
 
-def main():
+def main(argv: list[str] | None = None):
+    """CLI entry for heropen-mcp and `heropen mcp`.
+
+    When invoked as ``heropen mcp ...``, the literal ``mcp`` remains in
+    ``sys.argv``; strip it so argparse only sees real flags.
+    """
+    if argv is None:
+        argv = sys.argv[1:]
+    if argv and argv[0] == "mcp":
+        argv = argv[1:]
+
     parser = argparse.ArgumentParser(description="heropen MCP Server")
     parser.add_argument(
         "--http",
@@ -603,7 +621,7 @@ def main():
         default=None,
         help="HTTP bind port (default: 8090)",
     )
-    args = parser.parse_args()
+    args = parser.parse_args(argv)
 
     if args.host:
         os.environ["HEROPEN_MCP_HOST"] = args.host

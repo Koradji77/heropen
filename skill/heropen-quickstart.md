@@ -31,7 +31,7 @@ heropen auto-setup
 手动配置（任意 MCP 客户端）：
 
 ```json
-{ "mcpServers": { "heropen": { "command": "heropen", "args": ["mcp"] } } }
+{ "mcpServers": { "heropen": { "command": "heropen-mcp", "args": [] } } }
 ```
 
 ### 3. 常用命令

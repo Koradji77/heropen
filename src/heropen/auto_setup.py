@@ -52,6 +52,12 @@ def _log(msg: str) -> None:
 
 def _should_run() -> bool:
     """Only run if no sentinel file exists and no agent-config.json."""
+    # Pure queries must not trigger side-effecting first-run setup.
+    argv = [a.lower() for a in sys.argv[1:]]
+    skip = {"--version", "-v", "version", "--help", "-h", "help"}
+    if any(a in skip for a in argv):
+        _log(f"auto_setup skipped (argv={sys.argv!r})")
+        return False
     hero_pen_dir = _get_hero_pen_dir()
     sentinel = Path(hero_pen_dir) / ".auto_setup_done"
     if sentinel.exists():

@@ -1,5 +1,31 @@
 # heropen 升级指南
 
+## v1.9.3 → v1.9.4
+
+### 改动摘要（来自真实 agent 安装反馈）
+
+- **钉死 mcp 上界**：依赖改为 `mcp>=1.6,<2`。mcp 2.x 把 `FastMCP` 改名为 `MCPServer` 并搬迁模块，裸 `mcp>=1.6` 会装到 2.x，导致 `ModuleNotFoundError: mcp.server.fastmcp`、MCP 起不来。导入失败时给出明确降级提示。
+- **修复 `heropen mcp`**：此前把字面量 `mcp` 漏进 argparse，报 `unrecognized arguments: mcp`。现在 CLI 与 `heropen-mcp` 都能启动；文档/安装引导统一推荐 `{"command":"heropen-mcp","args":[]}`。
+- **首次 add 不再卡下载**：本地向量模型未缓存时，`add`/`recall` 直接走 FTS，不阻塞下载约 95MB 模型。显式 `heropen embed` 或 `HEROPEN_ALLOW_MODEL_DOWNLOAD=1` 才下载。
+- **`--version` / `--help` 不触发 auto-setup**：`.pth` 钩子遇到纯查询参数直接跳过，避免副作用太积极。
+- **宣传口径收窄**：自动探测仅覆盖 Claude/Cursor/Windsurf/WorkBuddy 等固定路径；Hermes 等自定义 `mcp_servers` 需手动配置（README 已写清）。
+
+### 升级
+
+```bash
+pip install --upgrade 'heropen'
+# 若已被 mcp 2.x 卡住：
+pip install --upgrade 'heropen' 'mcp>=1.6,<2'
+```
+
+### 行为兼容
+
+- 已有记忆数据无需迁移。
+- 已缓存的向量模型行为不变；未缓存时写入仍成功，仅暂无 embedding 列。
+- MCP 客户端若仍写 `{"command":"heropen","args":["mcp"]}`，1.9.4 起可工作；仍建议改为 `heropen-mcp`。
+
+---
+
 ## v1.9.2 → v1.9.3
 
 ### 改动摘要

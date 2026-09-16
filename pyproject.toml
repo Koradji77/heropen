@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "heropen"
-version = "1.9.3"
+version = "1.9.4"
 description = "heropen — AI Agent Long-term Memory System"
 readme = "README.md"
 requires-python = ">=3.10"
@@ -20,8 +20,9 @@ classifiers = [
 
 dependencies = [
     # Pure-Python MCP runtime; required by `heropen mcp` / `heropen-mcp`.
+    # mcp 2.x renamed FastMCP → MCPServer and moved modules — pin <2 until we adapt.
     # Keep native vector engine (fastembed/onnxruntime) optional for ARM ports.
-    "mcp>=1.6",
+    "mcp>=1.6,<2",
 ]
 
 [project.optional-dependencies]
@@ -34,7 +35,7 @@ ui = [
 all = [
     "heropen[embedding]",
     "heropen[ui]",
-    "mcp>=1.6",
+    "mcp>=1.6,<2",
 ]
 
 [project.scripts]
