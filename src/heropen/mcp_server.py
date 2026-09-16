@@ -231,7 +231,7 @@ def create_mcp_server():
         "（典型故障：深夜误说「早上好」、把用户凌晨说的「明天」机械当成字面次日）。\n"
         "替代路径：若你在开场调用了 search_memory（其返回已内置 time_context），同样满足本约定。"
     )
-    mcp = FastMCP("hero-pen", instructions=_PRIMING_INSTRUCTIONS)
+    mcp = FastMCP("heropen", instructions=_PRIMING_INSTRUCTIONS)
 
     # ── Startup self-heal: check all agent databases ──
     _all_agents = list(AGENTS.keys())
@@ -509,7 +509,7 @@ def create_mcp_server():
 
         result = {
             "status": "ok" if (db_connected and mcp_config_found) else "degraded",
-            "server": "hero-pen-mcp",
+            "server": "heropen-mcp",
             "version": __version__,
             "version_stale": version_stale,
             "agents": stats,
