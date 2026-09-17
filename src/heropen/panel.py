@@ -443,7 +443,7 @@ def run_gui() -> None:
         "heropen — AI Agent 长期记忆系统\n"
         f"版本：v{get_version()}\n"
         f"数据目录：{HERO_PEN_DIR}\n\n"
-        "MIT License\n"
+        "Apache-2.0 License\n"
         "© KSMN Studio — akoken@163.com\n"
         "https://heropen.net/heropen"
     )

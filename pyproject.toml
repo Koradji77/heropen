@@ -57,5 +57,5 @@ exclude = [
 
 [project.urls]
 Homepage = "https://heropen.net"
-Documentation = "https://heropen.net/heropen/docs/"
+Documentation = "https://heropen.net/docs/"
 Repository = "https://github.com/Koradji77/heropen"

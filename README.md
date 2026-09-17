@@ -143,7 +143,7 @@ heropen 是本地优先的记忆与上下文工具，你的数据始终保存在
 ## 链接 & 支持
 
 - 官网：[heropen.net](https://heropen.net)
-- 文档：[heropen.net/heropen/docs](https://heropen.net/heropen/docs)
+- 文档：[heropen.net/docs](https://heropen.net/docs/)
 - GitHub：[github.com/Koradji77/heropen](https://github.com/Koradji77/heropen)
 
 ⭐ **喜欢就 star**，这是对我们最大的支持：点 [★ Star](https://github.com/Koradji77/heropen)。
