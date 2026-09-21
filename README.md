@@ -1,3 +1,6 @@
+<!-- mcp-name: net.heropen/heropen -->
+<!-- Official MCP Registry ownership marker. Do not remove. -->
+
 # heropen
 
 > **专业解决记不住的问题，越用越懂你。**

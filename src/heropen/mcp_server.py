@@ -233,6 +233,14 @@ def create_mcp_server():
     )
     mcp = FastMCP("heropen", instructions=_PRIMING_INSTRUCTIONS)
 
+    # Advertise *our* version in the MCP `initialize` handshake. FastMCP exposes no
+    # `version` parameter, so the low-level Server falls back to the `mcp` SDK's own
+    # version (`pkg_version("mcp")`) and clients/directories would show e.g. 1.30.0.
+    try:
+        mcp._mcp_server.version = __version__
+    except Exception:  # cosmetic only — never block startup over it
+        pass
+
     # ── Startup self-heal: check all agent databases ──
     _all_agents = list(AGENTS.keys())
     _recovered = 0

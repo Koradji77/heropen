@@ -1,5 +1,29 @@
 # heropen 升级指南
 
+## v1.9.5 → v1.9.6
+
+> 说明：本版为**元数据 / 分发版**，无记忆数据格式变更，无行为破坏。核心目的是把 heropen 发布到 **MCP 官方注册表**（MCP Registry），让 MCP 客户端与各目录能自动发现它。
+
+### 改动摘要
+
+- **接入官方 MCP 注册表**：新增 `server.json`（`net.heropen/heropen`，PyPI 包 + `uvx heropen mcp` 启动）。README 增加 `mcp-name:` 归属标记——注册表用它校验「这个 PyPI 包确实属于这个 server 名」。
+- **修复 `initialize` 握手中的版本号**：此前 MCP 客户端看到的 `serverInfo.version` 是 **mcp SDK 的版本**（例：`1.30.0`），而不是 heropen 的版本。现在正确上报 heropen 自身版本。这会影响客户端展示与目录收录信息。
+- **文档链接修正**：`pyproject.toml` 的 `Documentation`、README、安装引导文案统一指向 `https://heropen.net/docs/`（旧路径 `heropen.net/heropen/docs/` 已 301，但不再写死）。
+- **许可声明修正**：代码内面板文案由 `MIT License` 改为实际的 `Apache-2.0 License`。
+
+### 升级
+
+```bash
+pip install --upgrade heropen
+```
+
+### 行为兼容
+
+- 已有记忆数据无需迁移。
+- CLI 子命令、MCP 工具集合（8 个）与免费额度（6 个 agent）均不变。
+
+---
+
 ## v1.9.3 → v1.9.5
 
 > 说明：**1.9.4 已于 2026-09-11 发布**（GitHub tag `v1.9.4` + PyPI）。1.9.5 在 1.9.4 基础上修复真实 agent 安装反馈，并**补回** 1.9.4 分支遗漏的免费额度改动（当时另一条开发线从 1.9.3 分出，未包含 1.9.4 提交）。发版由 AK 负责（GitHub + PyPI），开发侧不再自行 push tag / 上传。
