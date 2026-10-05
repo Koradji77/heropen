@@ -121,9 +121,6 @@ def main():
     elif cmd in ("import",):
         from heropen.cli_commands import cmd_import
         cmd_import(args[1:])
-    elif cmd in ("delete",):
-        from heropen.cli_commands import cmd_delete
-        cmd_delete(args[1:])
     elif cmd in ("session",):
         from heropen.cli_commands import cmd_session
         cmd_session(args[1:])
@@ -139,6 +136,13 @@ def main():
     elif cmd == "doctor":
         from heropen.cli_commands import cmd_doctor
         cmd_doctor(args[1:])
+    elif cmd == "tray":
+        try:
+            from heropen.tray import main as tray_main
+        except ImportError:
+            print("托盘角标需要 heropen[tray] 扩展，请先安装：pip install 'heropen[tray]'")
+            sys.exit(1)
+        tray_main()
     else:
         print(f"heropen: unknown command '{cmd}'")
         print_help()
@@ -171,13 +175,13 @@ Commands:
     embed           Generate embeddings for existing entries
     backup          Export memories to JSON
     restore         Import memories from JSON backup
-    delete          Delete a memory entry
     health          Check system health (alias for status)
     session         Save or recover session checkpoint
     diagnose        Run system diagnostics (config, DB, connectivity, version)
     doctor          工程税自检（写入纪律 / Prompt Cache / 容量 / Embedding 迁移 / 端口安全）
     panel           打开本地记忆面板（Plan-C，一条命令）
     viewer          Launch web viewer (http://127.0.0.1:9020)
+    tray            Windows 系统托盘角标（常驻存在感 + 工作台，需 heropen[tray]）
     mcp             Start MCP server
     help            Show this help message
     version         Show version

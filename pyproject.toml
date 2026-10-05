@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "heropen"
-version = "1.9.6"
+version = "2.0.0"
 description = "heropen — AI Agent Long-term Memory System"
 readme = "README.md"
 requires-python = ">=3.10"
@@ -32,9 +32,14 @@ embedding = [
 ui = [
     "rich>=13.0",
 ]
+tray = [
+    "pystray>=0.19",
+    "Pillow>=10",
+]
 all = [
     "heropen[embedding]",
     "heropen[ui]",
+    "heropen[tray]",
     "mcp>=1.6,<2",
 ]
 

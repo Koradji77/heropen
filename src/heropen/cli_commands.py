@@ -511,54 +511,6 @@ def cmd_import(args: list[str]) -> None:
     print(f"✅ 已导入 {count} 条新记录 [{agent}]")
 
 
-def cmd_delete(args: list[str]) -> None:
-    agent = get_default_agent()
-    entry_id: int | None = None
-
-    i = 0
-    while i < len(args):
-        a = args[i]
-        if a == "--agent" and i + 1 < len(args):
-            agent = args[i + 1]
-            i += 2
-            continue
-        if a.startswith("--agent="):
-            agent = a.split("=", 1)[1]
-            i += 1
-            continue
-        if not a.startswith("-"):
-            try:
-                entry_id = int(a)
-            except ValueError:
-                pass
-        i += 1
-
-    if entry_id is None:
-        print("❌ 需要指定条目 ID")
-        return
-
-    c = conn(agent)
-    row = c.execute(
-        "SELECT id, entry_date, section, substr(content,1,80) as preview FROM entries WHERE id=?",
-        (entry_id,),
-    ).fetchone()
-    if not row:
-        print(f"❌ 未找到 ID={entry_id}")
-        c.close()
-        return
-    print(f"即将删除 [{row['id']}] {row['entry_date']} | {row['section']}")
-    print(f"  {row['preview']}")
-    ans = input("确认删除？[y/N]: ").strip().lower()
-    if ans not in ("y", "yes"):
-        print("已取消。")
-        c.close()
-        return
-    c.execute("DELETE FROM entries WHERE id=?", (entry_id,))
-    c.commit()
-    c.close()
-    print(f"✅ 已删除 [{entry_id}]")
-
-
 def cmd_embed(args: list[str]) -> None:
     agent = get_default_agent()
     force = False
