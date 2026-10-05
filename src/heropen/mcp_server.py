@@ -22,11 +22,14 @@ os.makedirs(os.path.expanduser("~/.heropen"), exist_ok=True)
 from heropen.core import (
     AGENTS,
     add_entry,
+    build_signature,
     conn,
     flag_memory_hygiene,
+    flush_pending,
     get_default_agent,
     search_vector,
     search_fts,
+    store_memory,
     update_entry,
     startup_self_heal,
     resolve_conflicts,
@@ -370,10 +373,20 @@ def create_mcp_server():
         把这段文本作为上下文读入，你的寒暄与对"明天/下周"等相对时间的理解才有据可依，
         不会出现"晚上说早上好"或把用户凌晨说的"明天"误判为字面次日。
 
+        返回内容开头会带一行「开场签名」（品牌 + 状态），形如：
+        heropen 已就绪 · 本地记忆 187 条 · 距上次对话约 3 小时 · agent=xiaokai
+
         Args:
             agent: Which agent's context to prime (default: auto).
         """
-        return build_conversation_primer(agent)
+        agent = agent or get_default_agent()
+        # 开场先把上一段对话攒下的（chunk 缓冲）落库，保证不静默丢失
+        try:
+            flush_pending(agent)
+        except Exception:
+            pass
+        # 签名贴在时间上下文开头：开场自动亮相的一行状态
+        return build_signature(agent) + "\n\n" + build_conversation_primer(agent)
 
     @mcp.tool()
     def add_memory(
@@ -398,17 +411,24 @@ def create_mcp_server():
         """
         from datetime import date
         ed = entry_date if entry_date else date.today().isoformat()
-        entry_id = add_entry(
+        res = store_memory(
+            agent=agent,
             entry_date=ed,
-            content=content[:5000],
+            content=content,
             section=section,
             tags=tags,
-            agent=agent,
             source="mcp",
         )
-        if entry_id:
-            return json.dumps({"ok": True, "id": entry_id, "section": section}, ensure_ascii=False)
-        return json.dumps({"ok": False, "error": "Write failed"}, ensure_ascii=False)
+        if res.get("written"):
+            if res.get("id"):
+                return json.dumps({"ok": True, "id": res["id"], "section": section,
+                                   "mode": res.get("mode"), "reason": res.get("reason")},
+                                  ensure_ascii=False)
+            return json.dumps({"ok": False, "error": "Write failed"}, ensure_ascii=False)
+        # chunk：已攒进缓冲区（攒够阈值会自动落库，开场也会补落）
+        return json.dumps({"ok": True, "buffered": res.get("buffered"),
+                           "flushed": res.get("flushed"), "section": section,
+                           "mode": "chunk", "reason": res.get("reason")}, ensure_ascii=False)
 
     @mcp.tool()
     def update_memory(

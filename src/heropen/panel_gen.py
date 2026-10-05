@@ -7,7 +7,7 @@ heropen.panel_gen — 本地面板生成器（Plan-C / Agent 下钻）
 渲染成方案 C（金棕、agent 网格 → 私有记忆域下钻）的静态 HTML，
 写到 ~/.heropen/panel.html，全程本地、不出本机、不登录。
 
-免费(basic) 与 Plus 均显示前 FREE_AGENT_LIMIT(=6) 个 agent——档位差别在功能
+免费(basic) 与 Plus 均显示前 FREE_AGENT_LIMIT(=8) 个 agent——档位差别在功能
 （Plus 提供 skill 收集与共享），不在 agent 数量。
 调用 build_and_open() 会生成文件并用默认浏览器打开（file:// 协议），
 作为 ``heropen panel`` 命令的底层实现。传 ``open_browser=False`` 则只生成
@@ -27,7 +27,7 @@ from heropen.core import HERO_PEN_DIR, FREE_AGENT_LIMIT, get_agent_limit, get_ed
 
 CONFIG = os.path.join(HERO_PEN_DIR, "agent-config.json")
 OUT = os.path.join(HERO_PEN_DIR, "panel.html")
-PLUS_AGENT_LIMIT = 6
+PLUS_AGENT_LIMIT = 8  # 与 FREE_AGENT_LIMIT 统一；档位差别在功能不在数量
 
 
 def _version_payload() -> dict:
@@ -244,7 +244,7 @@ TEMPLATE = r"""<!DOCTYPE html>
   <div class="verline" id="verLine"></div>
   <div class="stats" id="stats"></div>
   <div class="nav-item active">🤖 Agent 状态</div>
-  <div class="hint">只读视图。记忆由 agent 对话时自动写入，无需手动录入。<br>免费版与 Plus 版均支持 6 个 Agent 私有记忆域；Plus 另含 skill 收集与共享。</div>
+  <div class="hint">只读视图。记忆由 agent 对话时自动写入，无需手动录入。<br>免费版与 Plus 版均支持 8 个 Agent 私有记忆域；Plus 另含 skill 收集与共享。</div>
 </div>
 <div class="main">
   <div id="updBanner"></div>

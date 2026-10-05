@@ -25,7 +25,7 @@ from heropen.core import HERO_PEN_DIR, AGENTS, init_db
 
 AGENT_CONFIG_PATH = os.path.join(HERO_PEN_DIR, "agent-config.json")
 from heropen.core import FREE_AGENT_LIMIT as MAX_AGENTS_BASIC
-MAX_AGENTS_PLUS = 5
+MAX_AGENTS_PLUS = MAX_AGENTS_BASIC  # 免费与 Plus 统一 8 个 agent 私有记忆域
 
 INVALID_NAME_RE = re.compile(r'[/\\]')
 

@@ -30,11 +30,11 @@ BACKUP_KEEP_LOCAL = 3
 BACKUP_KEEP_REMOTE = 7
 
 # ─── Agent display / install limits (config-driven, no code traps) ─
-# Agent count is uniform across editions (basic=6, plus/pro=6); tiering is
+# Agent count is uniform across editions (free=8, plus/pro=8); tiering is
 # feature-based — Plus adds skill collection & sharing, not more agents.
 # Override with env HEROPEN_AGENT_LIMIT (positive int).
-FREE_AGENT_LIMIT = 6
-PLUS_AGENT_LIMIT = 6
+FREE_AGENT_LIMIT = 8
+PLUS_AGENT_LIMIT = 8
 OVERFLOW_AGENT = "_shared"
 
 
@@ -795,6 +795,199 @@ def add_entry(
     c.close()
     auto_backup(agent)
     return entry_id
+
+
+# ─── Opening signature (2.0 存在感之一：开场自动亮相) ──────────────
+def build_signature(agent: str | None = None) -> str:
+    """开场签名：每次对话开场、agent 办事前，自动塞进上下文的一行「我还在」。
+
+    形如：heropen 已就绪 · 本地记忆 187 条 · 距上次对话约 3 小时 · agent=xiaokai
+    挂在 MCP prime_conversation / CLI bootstrap 的返回值（开头）；
+    以后「开场自动召回」做成后，签名贴在那一块开头。
+    """
+    agent = agent or get_default_agent()
+    total = 0
+    last_at = ""
+    try:
+        c = conn(agent)
+        total = c.execute("SELECT COUNT(*) FROM entries").fetchone()[0]
+        row = c.execute("SELECT created_at FROM entries ORDER BY id DESC LIMIT 1").fetchone()
+        last_at = (row[0] if row else "") or ""
+        c.close()
+    except Exception:
+        pass
+    if last_at:
+        try:
+            last_dt = datetime.fromisoformat(last_at)
+            secs = max((datetime.now() - last_dt).total_seconds(), 0)
+            if secs < 3600:
+                gap = f"约 {max(int(secs // 60), 1)} 分钟"
+            elif secs < 48 * 3600:
+                gap = f"约 {int(secs // 3600)} 小时"
+            else:
+                gap = f"约 {int(secs // 86400)} 天"
+        except Exception:
+            gap = "未知"
+        gap_part = f"距上次对话{gap}"
+    else:
+        gap_part = "首次对话"
+    return f"heropen 已就绪 · 本地记忆 {total} 条 · {gap_part} · agent={agent}"
+
+
+# ─── Storage kernel: 落档频率与粒度（chunk / sentence / auto）─────────
+# 语义（产品口径，详见 docs/2.0-开场签名与存储内核.md）：
+#   chunk    攒一批再落：一段对话告一段落 / 缓冲区够长 / 会话结束时，合成较少几条再 add
+#   sentence 一轮就落：每完成一轮有信息量的话轮，尽快写成一条
+#   auto     闲聊倾向 chunk；命中「记住/决定/路径/偏好」→ sentence
+# 边界：模式只管落档频率与粒度，不管检索、不管托盘显示；写的仍是 heropen 事实库（SSOT）。
+TRAY_STATE_FILE = os.path.join(HERO_PEN_DIR, "_tray_state.json")
+STORAGE_MODES = ("chunk", "sentence", "auto")
+DEFAULT_STORAGE_MODE = "auto"
+# auto 判定触发词（可解释）：命中 → 宁碎勿丢，立即落档
+SENTENCE_TRIGGER_RE = re.compile(
+    r"(记住|记得|决定|定了|路径|偏好|约定|以后|别再|一定|必须|项目|端口|密钥|token|账号|规则)",
+    re.I,
+)
+CHUNK_FLUSH_THRESHOLD = 6  # 缓冲区攒够这么多条就自动落档
+
+
+def get_storage_mode(agent: str | None = None) -> str:
+    """读该 agent 的存储模式（托盘按 agent 分设，落在 _tray_state.json）。"""
+    agent = agent or get_default_agent()
+    env = os.environ.get("HEROPEN_STORAGE_MODE", "").strip().lower()
+    if env in STORAGE_MODES:
+        return env
+    try:
+        with open(TRAY_STATE_FILE, encoding="utf-8") as f:
+            st = json.load(f)
+        m = (st.get("modes") or {}).get(agent)
+        if m in STORAGE_MODES:
+            return m
+        dm = st.get("default_mode")
+        if dm in STORAGE_MODES:
+            return dm
+    except Exception:
+        pass
+    return DEFAULT_STORAGE_MODE
+
+
+def classify_storage_mode(text: str) -> tuple[str, str]:
+    """auto 的判定：返回 (mode, reason)。命中触发词 → sentence，否则 chunk。"""
+    m = SENTENCE_TRIGGER_RE.search(text or "")
+    if m:
+        return "sentence", f"命中「{m.group(0)}」→ 一轮一存（宁碎勿丢）"
+    return "chunk", "闲聊/日常 → 大块存储（攒批落档）"
+
+
+def _pending_path(agent: str) -> str:
+    return os.path.join(HERO_PEN_DIR, f"_pending_{agent}.json")
+
+
+def _load_pending(agent: str) -> list:
+    p = _pending_path(agent)
+    if not os.path.exists(p):
+        return []
+    try:
+        with open(p, encoding="utf-8") as f:
+            return json.load(f)
+    except Exception:
+        return []
+
+
+def _save_pending(agent: str, items: list) -> None:
+    p = _pending_path(agent)
+    try:
+        if items:
+            with open(p, "w", encoding="utf-8") as f:
+                json.dump(items, f, ensure_ascii=False, indent=1)
+        elif os.path.exists(p):
+            os.remove(p)
+    except Exception:
+        pass
+
+
+def flush_pending(agent: str | None = None) -> int:
+    """把缓冲区按 section 聚合成较少几条，真正落库（chunk 模式的落档时刻）。
+
+    返回落库条数。缓冲区落盘存储，进程重启不丢；开场（prime / bootstrap）也会调用，
+    保证「攒着的内容」一定有机会落库，不会静默丢失。
+    """
+    agent = agent or get_default_agent()
+    items = _load_pending(agent)
+    if not items:
+        return 0
+    groups: dict = {}
+    for it in items:
+        groups.setdefault(it.get("section") or "对话记录", []).append(it)
+    written = 0
+    for section, group in groups.items():
+        parts = [(it.get("content") or "").strip() for it in group]
+        parts = [p for p in parts if p]
+        if not parts:
+            continue
+        tags = ",".join(
+            sorted({t.strip() for it in group for t in (it.get("tags") or "").split(",") if t.strip()})
+        )
+        entry_date = group[-1].get("entry_date") or date.today().isoformat()
+        add_entry(
+            entry_date=entry_date,
+            content="\n".join(parts)[:5000],
+            section=section,
+            tags=tags,
+            agent=agent,
+            source="chunk",
+        )
+        written += 1
+    _save_pending(agent, [])
+    return written
+
+
+def store_memory(
+    agent: str | None,
+    entry_date: str,
+    content: str,
+    section: str = "",
+    tags: str = "",
+    source: str = "mcp",
+) -> dict:
+    """写入策略总入口：按存储模式决定落档时机与粒度。
+
+    sentence → 立即一条；chunk → 攒进缓冲区（够长自动落）；auto → 先判定再路由。
+    """
+    agent = agent or get_default_agent()
+    mode = get_storage_mode(agent)
+    reason = ""
+    if mode == "auto":
+        mode, reason = classify_storage_mode(content)
+    if mode == "sentence":
+        eid = add_entry(
+            entry_date=entry_date,
+            content=content[:5000],
+            section=section,
+            tags=tags,
+            agent=agent,
+            source=source,
+        )
+        return {
+            "written": True, "id": eid, "mode": "sentence",
+            "reason": reason or "一轮一存 → 立即落档",
+        }
+    items = _load_pending(agent)
+    items.append({
+        "entry_date": entry_date,
+        "content": content[:5000],
+        "section": section,
+        "tags": tags,
+        "source": source,
+    })
+    _save_pending(agent, items)
+    flushed = 0
+    if len(items) >= CHUNK_FLUSH_THRESHOLD:
+        flushed = flush_pending(agent)
+    return {
+        "written": False, "buffered": len(items), "flushed": flushed, "mode": "chunk",
+        "reason": reason or "大块存储 → 攒批落档",
+    }
 
 
 # ─── Session Checkpoint & Recovery ──────────────────────────

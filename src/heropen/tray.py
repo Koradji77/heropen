@@ -11,8 +11,8 @@ heropen 驻留角标 —— 原生 Windows 通知区（系统托盘）模块。
     已存入：N 条
     已使用：N 天
 
-数据源：优先读真实库 ~/.heropen/*.db（entries 表聚合），读不到才回退内置 mock。
-        传 --mock 可强制用 mock 数据（演示大数字用）。
+数据源：优先读真实库 ~/.heropen/*.db（entries 表聚合）。读不到库时显示
+        「暂无数据 / 0」，绝不编造数字。传 --mock 才强制用演示大数字。
 
 菜单：
   heropen 状态行
@@ -29,9 +29,9 @@ heropen 驻留角标 —— 原生 Windows 通知区（系统托盘）模块。
 运行：heropen tray  (或 python -m heropen.tray [--mock])
 自检：heropen tray --selftest   (只生成图标/打印 tooltip 并退出)
 
-注意：存储模式（大块/一轮/自动）在 v2.0 中**仅为偏好记录**，实际存储策略
-      尚未接入 heropen 内核（诗诗的 archive_state），设置后不影响真实落档行为。
-      这是诚实的预览态：用户可设，但会被告知「暂未生效」。
+存储模式（大块/一轮/自动）已接入内核：决定记忆往 heropen **落档的频率与粒度**
+      ——chunk 攒批落 / sentence 一轮一存 / auto 按触发词智能选，按 agent 分别设置。
+      详见 docs/2.0-开场签名与存储内核.md。
 """
 from __future__ import annotations
 
@@ -72,19 +72,19 @@ TIP_MAX = 120   # Windows szTip = 128 wchar（含终止符），留余量
 MODES = [("chunk", "大块存储"), ("sentence", "一轮一存"), ("auto", "自动识别")]
 LABEL = dict(MODES)
 
-# agent 模式黑名单：开发/测试残留库 + 旧机器残留（妮妮等），不列入角标管理。
-# 四号机当前真实活跃库 = xiaokai(小凯) + _shared；其余空壳/残留均排除。
-# 注意：本机只反映本地 ~/.heropen 的真实库；其他机器（如三号机的诗诗）的记忆
-#       不在此体现，属正常范围（托盘角标按机器各自独立）。
-AGENT_IGNORE = {"agent", "agent2", "agent3", "agent5", "auto",
-                "install-agent2-gateway", "妮妮"}
+# agent 库忽略名单：只排除本机开发/测试残留与明确无用库。
+# 这是随包发布的名单，必须只含「绝不可能是真实用户 agent 名」的标识，
+# 以免误伤真人库（DF 评审要求：别误伤真人库）。
+# 真实活跃库（如 xiaokai、_shared）不在此列，会正常显示。
+AGENT_IGNORE = {"install-agent2-gateway", "妮妮"}
+# 演示用 mock 数据：仅在显式 --mock 时展示（给不会读库的环境看大数字）。
+# 真实环境读不到库时一律显示「暂无数据 / 0」，绝不编造数字。
+MOCK_DEMO = {"entries": 12846, "days": 104}
 DEFAULT_STATE = {
     "modes": {},             # 按 agent 分别设置： {agent名: mode}
     "default_mode": "auto",  # 新发现 agent 的默认模式
     "plan": "free",          # free / plus（当前写死免费版；Plus 激活检测未落地）
-    "entries": 12846,        # mock 兜底值（真实库读不到时用）
-    "days": 104,             # mock 兜底值
-    "autostart": True,       # 默认开机自启
+    "autostart": True,       # 默认开机自启（用户已确认保持开启）
 }
 
 # 开机自启：写入 HKCU\...\Run（无需管理员，pythonw 避免登录弹黑窗）
@@ -339,9 +339,20 @@ WORKBENCH_CSS = """
 def build_workbench_html(stats: dict, agents: list, modes: dict, plan: str, version: str) -> str:
     """用真实数据生成工作台 HTML（替代写死假数的静态 demo 页）。"""
     plan_label = "免费版" if plan == "free" else "Plus"
-    total = stats.get("entries", 0)
-    days = stats.get("days", 0)
+    no_data = bool(stats.get("no_data"))
+    is_mock = bool(stats.get("mock"))
+    total = 0 if no_data else stats.get("entries", 0)
+    days = 0 if no_data else stats.get("days", 0)
     since = stats.get("since") or "—"
+    ent_disp = "暂无数据" if no_data else f"{total:,}<small>条</small>"
+    day_disp = f"{days}<small>天</small>"
+    if no_data:
+        banner = ('<div class="plan-note">⚠ 未检测到本地 heropen 记忆库（~/.heropen/*.db）。'
+                  '装好 agent 并开始对话后，这里会显示真实记忆量与使用天数。</div>')
+    elif is_mock:
+        banner = ('<div class="plan-note">演示数据（--mock）：以下为示例数字，非真实记忆量。</div>')
+    else:
+        banner = ""
 
     # 记忆健康：真实派生指标——近 7 天有新增记忆的 agent 占比（非写死百分比）
     total_agents = len(agents)
@@ -395,15 +406,17 @@ def build_workbench_html(stats: dict, agents: list, modes: dict, plan: str, vers
     <div class="pill">{plan_label}</div>
   </header>
 
+  {banner}
+
   <h2>概览</h2>
   <div class="metrics">
-    <div class="metric"><div class="k">已存记忆</div><div class="v">{total:,}<small>条</small></div></div>
-    <div class="metric"><div class="k">已使用</div><div class="v">{days}<small>天</small></div></div>
+    <div class="metric"><div class="k">已存记忆</div><div class="v">{ent_disp}</div></div>
+    <div class="metric"><div class="k">已使用</div><div class="v">{day_disp}</div></div>
     <div class="metric"><div class="k">自</div><div class="v" style="font-size:20px">{_html.escape(str(since))}</div></div>
   </div>
 
   <h2>存储模式（每个 agent 独立设置）</h2>
-  <div class="plan-note">⚠ <b>规划项（v2.0 预览态）</b>：下方三种模式用于记录你的存储偏好，<b>当前仅保存设置、尚未接入 heropen 内核</b>，不会实际改变落档行为。v2.x 接入存储内核后将按设置生效。请勿依赖其当前行为。</div>
+  <div class="plan-note">✅ <b>已接入内核</b>：下方三种模式决定记忆往 heropen <b>落档的频率与粒度</b>——大块存储攒批落、一轮一存句句落、自动识别按「记住 / 决定 / 路径 / 偏好」等触发词智能选。模式只管落档，不管检索与显示；写的仍是本机事实库。</div>
   <p class="hint">三种可选项：普通聊天用大块、讨论调教用一轮一存、平时交给自动。具体设置见下方 Agent 表。</p>
   <div class="modes">
     <div class="mode"><div class="n"><span class="dot"></span>大块存储</div><div class="d">普通聊天用。攒批落档，对话最快。</div><div class="tag">chunk</div></div>
@@ -412,7 +425,7 @@ def build_workbench_html(stats: dict, agents: list, modes: dict, plan: str, vers
   </div>
 
   <h2>Agent（{len(agents)} 个 · 真实库）</h2>
-  <p class="hint">模式列即每个 agent 当前的存储设置（规划项，暂未生效），在角标右键菜单「存储模式（按 agent 分别设置）」中调整——一人对多 agent，各自存法不同。条数与最近写入来自真实库。</p>
+  <p class="hint">模式列即每个 agent 当前的落档策略（已生效）：大块存储攒批落、一轮一存句句落、自动识别按触发词智能选。在角标右键菜单「存储模式（按 agent 分别设置）」中调整——一人对多 agent，各自存法不同。条数与最近写入来自真实库。</p>
   <table>
     <thead><tr><th>Agent</th><th>模式</th><th>记忆条数</th><th>最近写入</th><th>近 7 天</th></tr></thead>
     <tbody>
@@ -595,27 +608,31 @@ class TrayApp:
 
     # -- helpers
     def refresh_stats(self) -> None:
-        """优先真实库，失败/强制则回退 mock。"""
-        got = None if self.force_mock else read_real_stats()
+        """优先真实库；--mock 才用演示大数字；读不到库显示「暂无数据 / 0」。"""
+        if self.force_mock:
+            self.stats = {**MOCK_DEMO, "since": None, "real": False, "mock": True}
+            return
+        got = read_real_stats()
         if got:
             self.stats = got
         else:
-            self.stats = {
-                "entries": int(self.state.get("entries", 0)),
-                "days": int(self.state.get("days", 0)),
-                "since": None,
-                "real": False,
-            }
+            self.stats = {"entries": 0, "days": 0, "since": None, "real": False, "no_data": True}
 
     def _tooltip(self) -> str:
         """四段悬停提示：身份 / 存储方式 / 已存条数 / 已使用天数。"""
         n_agents = len(self.state.get("modes", {}))
+        if self.stats.get("no_data"):
+            ent_disp = "暂无数据"
+            day_disp = "0"
+        else:
+            ent_disp = f"{self.stats.get('entries', 0):,} 条"
+            day_disp = f"{self.stats.get('days', 0)} 天"
         tip = "\n".join(
             [
                 "heropen agent 记忆系统",
                 f"存储方式：按 agent 分别设置（{n_agents} 个）",
-                f"已存入：{self.stats.get('entries', 0):,} 条",
-                f"已使用：{self.stats.get('days', 0)} 天",
+                f"已存入：{ent_disp}",
+                f"已使用：{day_disp}",
             ]
         )
         return tip[:TIP_MAX]
@@ -623,7 +640,8 @@ class TrayApp:
     def _status_line(self, item=None) -> str:
         plan = "免费版" if self.state["plan"] == "free" else "Plus"
         n = len(self.state.get("modes", {}))
-        return f"运行中 · {plan} · {n} 个 agent · 记忆 {self.stats.get('entries', 0):,} 条"
+        ent = "暂无数据" if self.stats.get("no_data") else f"{self.stats.get('entries', 0):,} 条"
+        return f"运行中 · {plan} · {n} 个 agent · 记忆 {ent}"
 
     def _refresh(self) -> None:
         self.refresh_stats()
@@ -639,8 +657,8 @@ class TrayApp:
             # 诚实提示：仅保存偏好，未接入内核、暂未生效
             try:
                 icon.notify(
-                    f"已保存「{agent}」的存储偏好：{LABEL[mode]}"
-                    f"（规划项，暂未生效，v2.x 接入内核后生效）",
+                    f"已设置「{agent}」的存储模式：{LABEL[mode]}"
+                    f"（已生效：决定何时、多细地落档）",
                     "heropen",
                 )
             except Exception:
@@ -753,7 +771,7 @@ class TrayApp:
                 "存储模式（按 agent 分别设置）",
                 pystray.Menu(
                     # 诚实声明：规划项，暂仅记录偏好
-                    pystray.MenuItem("⚠ 规划项：暂仅记录偏好，未生效", None, enabled=False),
+                    pystray.MenuItem("已接入内核：决定落档频率与粒度", None, enabled=False),
                     pystray.Menu.SEPARATOR,
                     *[
                         pystray.MenuItem(

@@ -18,9 +18,11 @@ from heropen.core import (
     AGENTS,
     add_entry,
     auto_tag,
+    build_signature,
     capture_session_content,
     conn,
     db_path,
+    flush_pending,
     get_default_agent,
     get_embedding,
     init_db,
@@ -98,6 +100,12 @@ def _format_time_gap(last_created_at: str) -> str:
 
 def cmd_bootstrap(args: list[str]) -> None:
     agent = _resolve_agent(args)
+    # 开场：先把上一段对话攒下的（chunk 缓冲）落库，保证不静默丢失
+    try:
+        flush_pending(agent)
+    except Exception:
+        pass
+    print(build_signature(agent), flush=True)  # 开场签名：品牌 + 状态一行
     heal = startup_self_heal(agent)
     if heal["status"] == "recovered":
         print(f"🔄 记忆已从备份恢复 [{agent}]（来自 {heal.get('from', '?')}）", flush=True)
