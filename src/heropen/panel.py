@@ -444,7 +444,7 @@ def run_gui() -> None:
         f"版本：v{get_version()}\n"
         f"数据目录：{HERO_PEN_DIR}\n\n"
         "Apache-2.0 License\n"
-        "© KSMN Studio — akoken@163.com\n"
+        "© KSMN Studio — heropen@agent.qq.com\n"
         "https://heropen.net/heropen"
     )
     ttk.Label(tab_about, text=about_text, style="Title.TLabel",

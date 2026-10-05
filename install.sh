@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # heropen 一键安装脚本 (macOS / Linux)
-# 用法: curl -sSL heropen.net/heropen/install.sh | bash
+# 用法: curl -sSL heropen.net/install.sh | bash
 set -euo pipefail
 
 RED='\033[0;31m'

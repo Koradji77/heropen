@@ -1,5 +1,5 @@
 # heropen 一键安装脚本 (Windows PowerShell)
-# 用法: irm heropen.net/heropen/install.ps1 | iex
+# 用法: irm heropen.net/install.ps1 | iex
 # 如果遇到执行策略限制，运行: Set-ExecutionPolicy -Scope Process -ExecutionPolicy Bypass
 
 $ErrorActionPreference = "Stop"
