@@ -14,10 +14,11 @@ heropen 驻留角标 —— 原生 Windows 通知区（系统托盘）模块。
 数据源：优先读真实库 ~/.heropen/*.db（entries 表聚合）。读不到库时显示
         「暂无数据 / 0」，绝不编造数字。传 --mock 才强制用演示大数字。
 
-菜单：
+菜单（2.0.4 起双语，语言选择持久化在 state.lang）：
   heropen 状态行
   版本 vX.Y.Z           (点开发布日志)
   ├ 存储模式  ▸ 大块存储 / 一轮一存 / 自动识别   (radio, 按 agent 分别设置)
+  ├ Language / 语言  ▸ 简体中文 / English        (radio，双语菜单项写死双语，任一语言下都找得到)
   ├ 打开工作台          (左键单击图标同效)
   ├ 打开主页
   ├ 检查更新          (pip install -U heropen)
@@ -72,6 +73,158 @@ TIP_MAX = 120   # Windows szTip = 128 wchar（含终止符），留余量
 MODES = [("chunk", "大块存储"), ("sentence", "一轮一存"), ("auto", "自动识别")]
 LABEL = dict(MODES)
 
+# ---------------------------------------------------------------- i18n（2.0.4）
+# 双语（简体中文 / English）。语言选择持久化在 state.lang，切换即时生效
+# （重建菜单 + 刷 tooltip，无需重启角标）。「Language / 语言」这一项本身
+# 双语写死——保证在任一语言下用户都能找到切换入口。
+
+LANGS = [("zh", "简体中文"), ("en", "English")]
+
+I18N = {
+    "zh": {
+        "product": "heropen agent 记忆系统",
+        "storage_line": "存储方式：按 agent 分别设置（{n} 个）",
+        "stored_line": "已存入：{v}",
+        "used_line": "已使用：{v}",
+        "unit_entries": "条",
+        "unit_days": "天",
+        "no_data": "暂无数据",
+        "plan_free": "免费版",
+        "status": "运行中 · {plan} · {n} 个 agent · 记忆 {ent}",
+        "version": "版本 v{v}",
+        "lang_menu": "Language / 语言",
+        "storage_menu": "存储模式（按 agent 分别设置）",
+        "kernel_note": "已接入内核：决定落档频率与粒度",
+        "mode_chunk": "大块存储",
+        "mode_sentence": "一轮一存",
+        "mode_auto": "自动识别",
+        "open_workbench": "打开工作台",
+        "open_home": "打开主页",
+        "check_update": "检查更新",
+        "autostart": "开机自启",
+        "restart": "重启",
+        "quit": "退出",
+        "notify_mode_set": "已设置「{agent}」的存储模式：{mode}（已生效：决定何时、多细地落档）",
+        "notify_upgrade_ok": "升级完成，请重启角标生效",
+        "notify_upgrade_fail": "升级失败，请手动执行 pip install -U heropen",
+        "notify_upgrade_err": "升级出错：{e}",
+        "notify_wb_err": "工作台生成失败：{e}",
+        "rel_today": "今天",
+        "rel_yesterday": "昨天",
+        "rel_days": "{n} 天前",
+        # 工作台页（wb_*）
+        "wb_title": "工作台",
+        "wb_running": "运行中",
+        "wb_overview": "概览",
+        "wb_stored": "已存记忆",
+        "wb_used": "已使用",
+        "wb_since": "自",
+        "wb_banner_nodata": "未检测到本地 heropen 记忆库（~/.heropen/*.db）。装好 agent 并开始对话后，这里会显示真实记忆量与使用天数。",
+        "wb_banner_mock": "演示数据（--mock）：以下为示例数字，非真实记忆量。",
+        "wb_no_agents": "未发现 agent 库",
+        "wb_modes_title": "存储模式（每个 agent 独立设置）",
+        "wb_kernel_bold": "已接入内核",
+        "wb_kernel_rest": "：下方三种模式决定记忆往 heropen <b>落档的频率与粒度</b>——大块存储攒批落、一轮一存句句落、自动识别按「记住 / 决定 / 路径 / 偏好」等触发词智能选。模式只管落档，不管检索与显示；写的仍是本机事实库。",
+        "wb_modes_hint": "三种可选项：普通聊天用大块、讨论调教用一轮一存、平时交给自动。具体设置见下方 Agent 表。",
+        "wb_chunk_desc": "普通聊天用。攒批落档，对话最快。",
+        "wb_sentence_desc": "讨论、调教用。一句一存，重要的全留下。",
+        "wb_auto_desc": "由 agent 判断该用哪种，无需手动切。",
+        "wb_agents_title": "Agent（{n} 个 · 真实库）",
+        "wb_agents_hint": "模式列即每个 agent 当前的落档策略（已生效）：大块存储攒批落、一轮一存句句落、自动识别按触发词智能选。在角标右键菜单「存储模式（按 agent 分别设置）」中调整——一人对多 agent，各自存法不同。条数与最近写入来自真实库。",
+        "wb_th_mode": "模式",
+        "wb_th_count": "记忆条数",
+        "wb_th_last": "最近写入",
+        "wb_th_7d": "近 7 天",
+        "wb_skill_title": "Skill 收集与共享",
+        "wb_skill_desc": "把记住的东西变成能复用的 skill，跨 agent 共享。",
+        "wb_skill_btn": "Plus 专属",
+        "wb_health_title": "记忆健康",
+        "wb_health_all": "全部 {n} 个 agent 近 7 天均有新增记忆",
+        "wb_health_part": "{a}/{n} 个 agent 近 7 天有新增记忆",
+        "wb_health_msg": "本地 {n} 个 agent · 最早记忆 {since} · 累计 {total} 条；本地存储无外部依赖，记忆压缩后仍可调用，不丢失之前的记忆。",
+        "wb_footer_local": "本地库 · 无外部依赖",
+        "wb_footer_tray": "托盘角标",
+    },
+    "en": {
+        "product": "heropen agent memory",
+        "storage_line": "Storage: per agent ({n})",
+        "stored_line": "Stored: {v}",
+        "used_line": "In use: {v}",
+        "unit_entries": "entries",
+        "unit_days": "days",
+        "no_data": "No data yet",
+        "plan_free": "Free",
+        "status": "Running · {plan} · {n} agents · {ent}",
+        "version": "Version v{v}",
+        "lang_menu": "Language / 语言",
+        "storage_menu": "Storage mode (per agent)",
+        "kernel_note": "Wired into the core: controls write frequency & granularity",
+        "mode_chunk": "Chunk (batched)",
+        "mode_sentence": "Per-turn",
+        "mode_auto": "Auto",
+        "open_workbench": "Open workbench",
+        "open_home": "Open homepage",
+        "check_update": "Check for updates",
+        "autostart": "Start at login",
+        "restart": "Restart",
+        "quit": "Quit",
+        "notify_mode_set": "Storage mode for \"{agent}\" set to {mode} (effective immediately)",
+        "notify_upgrade_ok": "Update installed - restart the tray icon to apply",
+        "notify_upgrade_fail": "Update failed - run: pip install -U heropen",
+        "notify_upgrade_err": "Update error: {e}",
+        "notify_wb_err": "Failed to build workbench: {e}",
+        "rel_today": "Today",
+        "rel_yesterday": "Yesterday",
+        "rel_days": "{n} days ago",
+        # workbench page (wb_*)
+        "wb_title": "Workbench",
+        "wb_running": "Running",
+        "wb_overview": "Overview",
+        "wb_stored": "Memories stored",
+        "wb_used": "In use",
+        "wb_since": "Since",
+        "wb_banner_nodata": "No local heropen memory library detected (~/.heropen/*.db). Once an agent is set up and conversations start, real memory counts and usage days will appear here.",
+        "wb_banner_mock": "Demo data (--mock): the numbers below are samples, not real memories.",
+        "wb_no_agents": "No agent libraries found",
+        "wb_modes_title": "Storage mode (per agent)",
+        "wb_kernel_bold": "Wired into the core",
+        "wb_kernel_rest": ": the three modes below control <b>how often and how finely</b> memories are written to heropen - Chunk batches, Per-turn writes every turn, Auto picks by trigger words such as \"remember / decide / path / preference\". Modes affect writing only, not retrieval or display; everything stays in the local fact base.",
+        "wb_modes_hint": "Three options: Chunk for everyday chat, Per-turn for decisions and coaching, Auto otherwise. Set them per agent in the table below.",
+        "wb_chunk_desc": "For everyday chat. Batched writes, fastest conversations.",
+        "wb_sentence_desc": "For discussions and tuning. Every turn saved, nothing important lost.",
+        "wb_auto_desc": "The agent picks the right mode - no manual switching.",
+        "wb_agents_title": "Agents ({n} · real libraries)",
+        "wb_agents_hint": "The mode column is each agent's live write policy: Chunk batches, Per-turn saves every turn, Auto picks by trigger words. Adjust it in the tray menu under \"Storage mode (per agent)\" - one person, many agents, each with its own policy. Counts and last-write come from the real libraries.",
+        "wb_th_mode": "Mode",
+        "wb_th_count": "Entries",
+        "wb_th_last": "Last write",
+        "wb_th_7d": "Last 7 days",
+        "wb_skill_title": "Skill collection & sharing",
+        "wb_skill_desc": "Turn remembered knowledge into reusable skills, shared across agents.",
+        "wb_skill_btn": "Plus only",
+        "wb_health_title": "Memory health",
+        "wb_health_all": "All {n} agents added memories in the last 7 days",
+        "wb_health_part": "{a} of {n} agents added memories in the last 7 days",
+        "wb_health_msg": "{n} local agents · earliest memory {since} · {total} entries in total; local storage with no external dependencies - memories stay usable after compression, nothing from the past is lost.",
+        "wb_footer_local": "Local storage · no external dependencies",
+        "wb_footer_tray": "tray icon",
+    },
+}
+
+# 模式代码 -> i18n key
+MODE_KEY = {"chunk": "mode_chunk", "sentence": "mode_sentence", "auto": "mode_auto"}
+
+
+def tr(lang: str, key: str, **kw) -> str:
+    """取翻译：lang 缺失回退中文，key 缺失回退中文同 key（永不抛 KeyError）。"""
+    d = I18N.get(lang) or I18N["zh"]
+    s = d.get(key) or I18N["zh"].get(key) or key
+    return s.format(**kw) if kw else s
+
+
+def mode_label(mode: str, lang: str = "zh") -> str:
+    return tr(lang, MODE_KEY.get(mode, "mode_auto"))
+
 # agent 库忽略名单：只排除本机开发/测试残留与明确无用库。
 # 这是随包发布的名单，必须只含「绝不可能是真实用户 agent 名」的标识，
 # 以免误伤真人库（DF 评审要求：别误伤真人库）。
@@ -85,6 +238,7 @@ DEFAULT_STATE = {
     "default_mode": "auto",  # 新发现 agent 的默认模式
     "plan": "free",          # free / plus（当前写死免费版；Plus 激活检测未落地）
     "autostart": True,       # 默认开机自启（用户已确认保持开启）
+    "lang": "zh",            # 角标显示语言：zh / en（2.0.4 起双语）
 }
 
 # 开机自启：写入 HKCU\...\Run（无需管理员，pythonw 避免登录弹黑窗）
@@ -211,23 +365,23 @@ def discover_agents() -> list:
     return out
 
 
-def _rel_time(date_str) -> str:
-    """把 'YYYY-MM-DD' 转成「今天/昨天/N 天前/具体日期」相对描述。"""
+def _rel_time(date_str, lang: str = "zh") -> str:
+    """把 'YYYY-MM-DD' 转成「今天/昨天/N 天前/具体日期」相对描述（双语）。"""
     try:
         d = _dt.date.fromisoformat(str(date_str)[:10])
         diff = (_dt.date.today() - d).days
         if diff <= 0:
-            return "今天"
+            return tr(lang, "rel_today")
         if diff == 1:
-            return "昨天"
+            return tr(lang, "rel_yesterday")
         if diff < 7:
-            return f"{diff} 天前"
+            return tr(lang, "rel_days", n=diff)
         return d.isoformat()
     except Exception:
         return str(date_str)[:10]
 
 
-def per_agent_stats() -> list:
+def per_agent_stats(lang: str = "zh") -> list:
     """每个活 agent 的真实统计：名称 / 总条数 / 最近写入 / 近 7 天每日分布。
 
     读真实库 ~/.heropen/<agent>.db 的 entries 表，与角标 tooltip 同源。
@@ -265,7 +419,7 @@ def per_agent_stats() -> list:
                 {
                     "name": name,
                     "count": count,
-                    "last": _rel_time(last) if last else "—",
+                    "last": _rel_time(last, lang) if last else "—",
                     "bars": bars,
                 }
             )
@@ -336,21 +490,25 @@ WORKBENCH_CSS = """
 """
 
 
-def build_workbench_html(stats: dict, agents: list, modes: dict, plan: str, version: str) -> str:
-    """用真实数据生成工作台 HTML（替代写死假数的静态 demo 页）。"""
-    plan_label = "免费版" if plan == "free" else "Plus"
+def build_workbench_html(stats: dict, agents: list, modes: dict, plan: str, version: str,
+                         lang: str = "zh") -> str:
+    """用真实数据生成工作台 HTML（替代写死假数的静态 demo 页）。2.0.4 起双语。"""
+    plan_label = tr(lang, "plan_free") if plan == "free" else "Plus"
     no_data = bool(stats.get("no_data"))
     is_mock = bool(stats.get("mock"))
     total = 0 if no_data else stats.get("entries", 0)
     days = 0 if no_data else stats.get("days", 0)
     since = stats.get("since") or "—"
-    ent_disp = "暂无数据" if no_data else f"{total:,}<small>条</small>"
-    day_disp = f"{days}<small>天</small>"
+    ent_disp = tr(lang, "no_data") if no_data else f"{total:,}<small>{tr(lang, 'unit_entries')}</small>"
+    day_disp = f"{days}<small>{tr(lang, 'unit_days')}</small>"
     if no_data:
-        banner = ('<div class="plan-note">⚠ 未检测到本地 heropen 记忆库（~/.heropen/*.db）。'
-                  '装好 agent 并开始对话后，这里会显示真实记忆量与使用天数。</div>')
+        banner = ('<div class="plan-note">⚠ '
+                  + (tr(lang, "wb_banner_nodata"))
+                  + '</div>')
     elif is_mock:
-        banner = ('<div class="plan-note">演示数据（--mock）：以下为示例数字，非真实记忆量。</div>')
+        banner = ('<div class="plan-note">'
+                  + tr(lang, "wb_banner_mock")
+                  + '</div>')
     else:
         banner = ""
 
@@ -359,11 +517,11 @@ def build_workbench_html(stats: dict, agents: list, modes: dict, plan: str, vers
     active_7d = sum(1 for a in agents if any(a.get("bars") or []))
     active_ratio = int(round(active_7d / total_agents * 100)) if total_agents else 0
     if total_agents == 0:
-        active_label = "未发现 agent 库"
+        active_label = tr(lang, "wb_no_agents")
     elif active_7d == total_agents:
-        active_label = f"全部 {total_agents} 个 agent 近 7 天均有新增记忆"
+        active_label = tr(lang, "wb_health_all", n=total_agents)
     else:
-        active_label = f"{active_7d}/{total_agents} 个 agent 近 7 天有新增记忆"
+        active_label = tr(lang, "wb_health_part", a=active_7d, n=total_agents)
 
     rows = []
     for a in agents:
@@ -380,76 +538,78 @@ def build_workbench_html(stats: dict, agents: list, modes: dict, plan: str, vers
         rows.append(
             "<tr>"
             f'<td class="aname">{_html.escape(a["name"])}</td>'
-            f'<td class="mono">{_html.escape(LABEL.get(mode, mode))}</td>'
+            f'<td class="mono">{_html.escape(mode_label(mode, lang))}</td>'
             f'<td class="mono">{a["count"]:,}</td>'
             f'<td class="mono">{_html.escape(a["last"])}</td>'
             f'<td><div class="bars">{bars_html}</div></td>'
             "</tr>"
         )
-    rows_str = "\n".join(rows) if rows else '<tr><td colspan="5" class="mono">未发现 agent 库</td></tr>'
+    rows_str = "\n".join(rows) if rows else (
+        f'<tr><td colspan="5" class="mono">{tr(lang, "wb_no_agents")}</td></tr>')
 
+    html_lang = "zh-CN" if lang == "zh" else "en"
     return f"""<!DOCTYPE html>
-<html lang="zh-CN">
+<html lang="{html_lang}">
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>heropen · 工作台</title>
+<title>heropen · {tr(lang, "wb_title")}</title>
 <style>{WORKBENCH_CSS}</style>
 </head>
 <body>
 <div class="wrap">
   <header>
     <div class="brand">heropen</div>
-    <div class="sub">工作台</div>
+    <div class="sub">{tr(lang, "wb_title")}</div>
     <div class="spacer"></div>
-    <div class="pill live">运行中</div>
+    <div class="pill live">{tr(lang, "wb_running")}</div>
     <div class="pill">{plan_label}</div>
   </header>
 
   {banner}
 
-  <h2>概览</h2>
+  <h2>{tr(lang, "wb_overview")}</h2>
   <div class="metrics">
-    <div class="metric"><div class="k">已存记忆</div><div class="v">{ent_disp}</div></div>
-    <div class="metric"><div class="k">已使用</div><div class="v">{day_disp}</div></div>
-    <div class="metric"><div class="k">自</div><div class="v" style="font-size:20px">{_html.escape(str(since))}</div></div>
+    <div class="metric"><div class="k">{tr(lang, "wb_stored")}</div><div class="v">{ent_disp}</div></div>
+    <div class="metric"><div class="k">{tr(lang, "wb_used")}</div><div class="v">{day_disp}</div></div>
+    <div class="metric"><div class="k">{tr(lang, "wb_since")}</div><div class="v" style="font-size:20px">{_html.escape(str(since))}</div></div>
   </div>
 
-  <h2>存储模式（每个 agent 独立设置）</h2>
-  <div class="plan-note">✅ <b>已接入内核</b>：下方三种模式决定记忆往 heropen <b>落档的频率与粒度</b>——大块存储攒批落、一轮一存句句落、自动识别按「记住 / 决定 / 路径 / 偏好」等触发词智能选。模式只管落档，不管检索与显示；写的仍是本机事实库。</div>
-  <p class="hint">三种可选项：普通聊天用大块、讨论调教用一轮一存、平时交给自动。具体设置见下方 Agent 表。</p>
+  <h2>{tr(lang, "wb_modes_title")}</h2>
+  <div class="plan-note">✅ <b>{tr(lang, "wb_kernel_bold")}</b>{tr(lang, "wb_kernel_rest")}</div>
+  <p class="hint">{tr(lang, "wb_modes_hint")}</p>
   <div class="modes">
-    <div class="mode"><div class="n"><span class="dot"></span>大块存储</div><div class="d">普通聊天用。攒批落档，对话最快。</div><div class="tag">chunk</div></div>
-    <div class="mode"><div class="n"><span class="dot"></span>一轮一存</div><div class="d">讨论、调教用。一句一存，重要的全留下。</div><div class="tag">sentence</div></div>
-    <div class="mode"><div class="n"><span class="dot"></span>自动识别</div><div class="d">由 agent 判断该用哪种，无需手动切。</div><div class="tag">auto</div></div>
+    <div class="mode"><div class="n"><span class="dot"></span>{tr(lang, "mode_chunk")}</div><div class="d">{tr(lang, "wb_chunk_desc")}</div><div class="tag">chunk</div></div>
+    <div class="mode"><div class="n"><span class="dot"></span>{tr(lang, "mode_sentence")}</div><div class="d">{tr(lang, "wb_sentence_desc")}</div><div class="tag">sentence</div></div>
+    <div class="mode"><div class="n"><span class="dot"></span>{tr(lang, "mode_auto")}</div><div class="d">{tr(lang, "wb_auto_desc")}</div><div class="tag">auto</div></div>
   </div>
 
-  <h2>Agent（{len(agents)} 个 · 真实库）</h2>
-  <p class="hint">模式列即每个 agent 当前的落档策略（已生效）：大块存储攒批落、一轮一存句句落、自动识别按触发词智能选。在角标右键菜单「存储模式（按 agent 分别设置）」中调整——一人对多 agent，各自存法不同。条数与最近写入来自真实库。</p>
+  <h2>{tr(lang, "wb_agents_title", n=len(agents))}</h2>
+  <p class="hint">{tr(lang, "wb_agents_hint")}</p>
   <table>
-    <thead><tr><th>Agent</th><th>模式</th><th>记忆条数</th><th>最近写入</th><th>近 7 天</th></tr></thead>
+    <thead><tr><th>Agent</th><th>{tr(lang, "wb_th_mode")}</th><th>{tr(lang, "wb_th_count")}</th><th>{tr(lang, "wb_th_last")}</th><th>{tr(lang, "wb_th_7d")}</th></tr></thead>
     <tbody>
 {rows_str}
     </tbody>
   </table>
 
-  <h2>Skill 收集与共享 <span class="plus-tag">PLUS</span></h2>
+  <h2>{tr(lang, "wb_skill_title")} <span class="plus-tag">PLUS</span></h2>
   <div class="skill">
-    <span>把记住的东西变成能复用的 skill，跨 agent 共享。</span>
-    <span class="btn">Plus 专属</span>
+    <span>{tr(lang, "wb_skill_desc")}</span>
+    <span class="btn">{tr(lang, "wb_skill_btn")}</span>
   </div>
 
-  <h2>记忆健康</h2>
+  <h2>{tr(lang, "wb_health_title")}</h2>
   <div class="health">
     <div class="row"><span class="lbl">{active_label}</span></div>
-    <div class="msg">本地 {len(agents)} 个 agent · 最早记忆 {since} · 累计 {total:,} 条；本地存储无外部依赖，记忆压缩后仍可调用，不丢失之前的记忆。</div>
+    <div class="msg">{tr(lang, "wb_health_msg", n=len(agents), since=since, total=f"{total:,}")}</div>
     <div class="bar"><span style="width:{active_ratio}%"></span></div>
   </div>
 
   <footer>
-    <span>本地库 · 无外部依赖</span><span>·</span>
+    <span>{tr(lang, "wb_footer_local")}</span><span>·</span>
     <span>heropen v{_html.escape(version)}</span><span>·</span>
-    <span>托盘角标 <code>heropen tray</code></span>
+    <span>{tr(lang, "wb_footer_tray")} <code>heropen tray</code></span>
   </footer>
 </div>
 </body>
@@ -586,6 +746,9 @@ class TrayApp:
     def __init__(self, force_mock: bool = False) -> None:
         self.force_mock = force_mock
         self.state = load_state()
+        # 显示语言（2.0.4）：只认 zh/en，非法值回退中文
+        self.lang = self.state.get("lang") if self.state.get("lang") in ("zh", "en") else "zh"
+        self.state["lang"] = self.lang
         # 按 agent 分设：以 discover_agents()（只含真正有 entries 表的活 agent）
         # 为准，补齐新发现 agent 的默认模式，并裁掉已消失/空壳的旧 agent，
         # 避免把空壳库（如小凯.db 占位壳）当成可设模式的 agent 列进菜单。
@@ -619,29 +782,29 @@ class TrayApp:
             self.stats = {"entries": 0, "days": 0, "since": None, "real": False, "no_data": True}
 
     def _tooltip(self) -> str:
-        """四段悬停提示：身份 / 存储方式 / 已存条数 / 已使用天数。"""
+        """四段悬停提示：身份 / 存储方式 / 已存条数 / 已使用天数（双语）。"""
         n_agents = len(self.state.get("modes", {}))
         if self.stats.get("no_data"):
-            ent_disp = "暂无数据"
+            ent_disp = tr(self.lang, "no_data")
             day_disp = "0"
         else:
-            ent_disp = f"{self.stats.get('entries', 0):,} 条"
-            day_disp = f"{self.stats.get('days', 0)} 天"
+            ent_disp = f"{self.stats.get('entries', 0):,} {tr(self.lang, 'unit_entries')}"
+            day_disp = f"{self.stats.get('days', 0)} {tr(self.lang, 'unit_days')}"
         tip = "\n".join(
             [
-                "heropen agent 记忆系统",
-                f"存储方式：按 agent 分别设置（{n_agents} 个）",
-                f"已存入：{ent_disp}",
-                f"已使用：{day_disp}",
+                tr(self.lang, "product"),
+                tr(self.lang, "storage_line", n=n_agents),
+                tr(self.lang, "stored_line", v=ent_disp),
+                tr(self.lang, "used_line", v=day_disp),
             ]
         )
         return tip[:TIP_MAX]
 
     def _status_line(self, item=None) -> str:
-        plan = "免费版" if self.state["plan"] == "free" else "Plus"
+        plan = tr(self.lang, "plan_free") if self.state["plan"] == "free" else "Plus"
         n = len(self.state.get("modes", {}))
-        ent = "暂无数据" if self.stats.get("no_data") else f"{self.stats.get('entries', 0):,} 条"
-        return f"运行中 · {plan} · {n} 个 agent · 记忆 {ent}"
+        ent = tr(self.lang, "no_data") if self.stats.get("no_data") else f"{self.stats.get('entries', 0):,} {tr(self.lang, 'unit_entries')}"
+        return tr(self.lang, "status", plan=plan, n=n, ent=ent)
 
     def _refresh(self) -> None:
         self.refresh_stats()
@@ -657,8 +820,30 @@ class TrayApp:
             # 模式已实时写入 state，get_storage_mode 即时读 → 落档策略真实生效
             try:
                 icon.notify(
-                    f"已设置「{agent}」的存储模式：{LABEL[mode]}"
-                    f"（已生效：决定何时、多细地落档）",
+                    tr(self.lang, "notify_mode_set", agent=agent, mode=mode_label(mode, self.lang)),
+                    "heropen",
+                )
+            except Exception:
+                pass
+        return handler
+
+    def set_lang(self, lang: str):
+        """切换显示语言（radio）：写入 state、重建菜单、刷 tooltip，即时生效。"""
+        def handler(icon, item):
+            if lang not in ("zh", "en"):
+                return
+            self.lang = lang
+            self.state["lang"] = lang
+            self._refresh()
+            # 菜单文案是静态构建的，必须整体重建才能换语言
+            try:
+                icon.menu = self._build_menu()
+                icon.update_menu()
+            except Exception:
+                pass
+            try:
+                icon.notify(
+                    ("Language switched to English" if lang == "en" else "已切换为简体中文"),
                     "heropen",
                 )
             except Exception:
@@ -673,19 +858,20 @@ class TrayApp:
         """
         try:
             self.refresh_stats()
-            agents = per_agent_stats()
+            agents = per_agent_stats(self.lang)
             html = build_workbench_html(
                 self.stats,
                 agents,
                 self.state.get("modes", {}),
                 self.state.get("plan", "free"),
                 get_version(),
+                lang=self.lang,
             )
             WORKBENCH.write_text(html, encoding="utf-8")
             webbrowser.open(WORKBENCH.as_uri())
         except Exception as e:
             try:
-                (icon or self.icon).notify(f"工作台生成失败：{e}", "heropen")
+                (icon or self.icon).notify(tr(self.lang, "notify_wb_err", e=e), "heropen")
             except Exception:
                 pass
 
@@ -704,11 +890,11 @@ class TrayApp:
             )
             ok = r.returncode == 0
             (icon or self.icon).notify(
-                "升级完成，请重启角标生效" if ok else "升级失败，请手动执行 pip install -U heropen",
+                tr(self.lang, "notify_upgrade_ok") if ok else tr(self.lang, "notify_upgrade_fail"),
                 "heropen",
             )
         except Exception as e:
-            (icon or self.icon).notify(f"升级出错：{e}", "heropen")
+            (icon or self.icon).notify(tr(self.lang, "notify_upgrade_err", e=e), "heropen")
 
     def toggle_autostart(self, icon, item):
         self.state["autostart"] = not self.state["autostart"]
@@ -759,19 +945,20 @@ class TrayApp:
 
     # -- menu
     def _build_menu(self) -> pystray.Menu:
+        L = self.lang
         return pystray.Menu(
             # 注：Win32 对 enabled=False 的菜单项强制置灰（MFS_DISABLED）。
             # 这两行是「信息行」，要黑字就只能是 enabled=True + 空动作
             # （action=None 被 pystray 包成 lambda *_ : None，点击无副作用）。
             pystray.MenuItem("heropen", None),
             pystray.MenuItem(self._status_line, None),
-            pystray.MenuItem(f"版本 v{get_version()}", self.show_version),
+            pystray.MenuItem(tr(L, "version", v=get_version()), self.show_version),
             pystray.Menu.SEPARATOR,
             pystray.MenuItem(
-                "存储模式（按 agent 分别设置）",
+                tr(L, "storage_menu"),
                 pystray.Menu(
                     # 模式已接入内核：决定落档频率与粒度（实时生效）
-                    pystray.MenuItem("已接入内核：决定落档频率与粒度", None, enabled=False),
+                    pystray.MenuItem(tr(L, "kernel_note"), None, enabled=False),
                     pystray.Menu.SEPARATOR,
                     *[
                         pystray.MenuItem(
@@ -779,12 +966,12 @@ class TrayApp:
                             pystray.Menu(
                                 *[
                                     pystray.MenuItem(
-                                        label,
+                                        mode_label(mode, L),
                                         self.set_mode_for(ag, mode),
                                         checked=lambda item, a=ag, m=mode: self.state.get("modes", {}).get(a) == m,
                                         radio=True,
                                     )
-                                    for mode, label in MODES
+                                    for mode in ("chunk", "sentence", "auto")
                                 ]
                             ),
                         )
@@ -792,14 +979,29 @@ class TrayApp:
                     ]
                 ),
             ),
-            pystray.MenuItem("打开工作台", self.open_workbench, default=True),
-            pystray.MenuItem("打开主页", self.open_home),
-            pystray.MenuItem("检查更新", self.upgrade),
+            # 双语切换（2.0.4）：菜单项标题写死双语，任一语言下都找得到
+            pystray.MenuItem(
+                tr(L, "lang_menu"),
+                pystray.Menu(
+                    *[
+                        pystray.MenuItem(
+                            label,
+                            self.set_lang(code),
+                            checked=lambda item, c=code: self.lang == c,
+                            radio=True,
+                        )
+                        for code, label in LANGS
+                    ]
+                ),
+            ),
+            pystray.MenuItem(tr(L, "open_workbench"), self.open_workbench, default=True),
+            pystray.MenuItem(tr(L, "open_home"), self.open_home),
+            pystray.MenuItem(tr(L, "check_update"), self.upgrade),
             pystray.Menu.SEPARATOR,
-            pystray.MenuItem("开机自启", self.toggle_autostart,
+            pystray.MenuItem(tr(L, "autostart"), self.toggle_autostart,
                              checked=lambda item: self.state["autostart"]),
-            pystray.MenuItem("重启", self.restart),
-            pystray.MenuItem("退出", self.quit),
+            pystray.MenuItem(tr(L, "restart"), self.restart),
+            pystray.MenuItem(tr(L, "quit"), self.quit),
         )
 
     def _setup(self, icon) -> None:
@@ -835,8 +1037,12 @@ def main(argv: list[str] | None = None) -> int:
         app = TrayApp(force_mock=args.mock)
         img = make_icon_image(64)
         print("selftest ok; icon size:", img.size, "->", ICON_PNG.name, ICON_ICO.name)
-        print("--- tooltip ---")
+        print("--- tooltip (zh default) ---")
         print(app._tooltip())
+        print("--- tooltip (en, temporary switch, not saved) ---")
+        app.lang = "en"
+        print(app._tooltip())
+        app.lang = "zh"
         print("--- source ---", "mock" if app.stats.get("real") is not True else f"real ({app.stats.get('since')} 起)")
         return 0
 
