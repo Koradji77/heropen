@@ -34,6 +34,7 @@ from heropen.core import (
     startup_self_heal,
     resolve_conflicts,
 )
+from heropen.core import auto_save_turn as _core_auto_save_turn
 from heropen.core import session_checkpoint as _core_checkpoint
 from heropen.core import session_recover as _core_recover
 from heropen import __version__
@@ -232,7 +233,13 @@ def create_mcp_server():
         "把它作为首批上下文读入，然后再开始回应或与用户寒暄。\n"
         "原因：heropen 不会自动把时间注入你的 prompt；若不先调 prime_conversation，你将失去时间感"
         "（典型故障：深夜误说「早上好」、把用户凌晨说的「明天」机械当成字面次日）。\n"
-        "替代路径：若你在开场调用了 search_memory（其返回已内置 time_context），同样满足本约定。"
+        "替代路径：若你在开场调用了 search_memory（其返回已内置 time_context），同样满足本约定。\n"
+        "\n"
+        "💾 每轮自动存档（heropen 2.0.1）：在【每一次】你完成回复后，调用 auto_save_turn 工具，"
+        "把你的回复原文作为 content 传入（若方便也把本轮用户输入作为 user_content）。"
+        "这是「轮轮不落」的自动存档安全网，与你的主动 add_memory 互不影响；落库频率由存储模式决定"
+        "（sentence 立即落 / chunk 攒批 / auto 智能选）。注意：host/网关若已自动调用本工具，则无需你重复调用——"
+        "heropen 不做物理删除，少量重复无害，搜索结果会带卫生标记。"
     )
     mcp = FastMCP("heropen", instructions=_PRIMING_INSTRUCTIONS)
 
@@ -429,6 +436,37 @@ def create_mcp_server():
         return json.dumps({"ok": True, "buffered": res.get("buffered"),
                            "flushed": res.get("flushed"), "section": section,
                            "mode": "chunk", "reason": res.get("reason")}, ensure_ascii=False)
+
+    @mcp.tool()
+    def auto_save_turn(
+        content: str,
+        agent: str | None = None,
+        user_content: str = "",
+        section: str = "",
+        tags: str = "",
+    ) -> str:
+        """每轮自动存档钩子（heropen 2.0.1）。宿主 / 网关在每轮 assistant 回复完成后调用本工具，
+        把本轮对话提交给 heropen 存储内核；落库时机仍由该 agent 的存储模式决定
+        （sentence 立即落 / chunk 攒批落 / auto 智能选），与「是否每轮提交」两层正交。
+
+        这是 heropen 的「轮轮不落」安全网：无论模型是否主动调 add_memory，每轮回复都会被提交。
+        source 固定 auto_turn，便于与显式 add 区分。请勿用本工具替代断点（session_checkpoint）。
+
+        Args:
+            content: 本轮 assistant 回复原文（必填）。
+            agent: 哪个 agent 的记忆（默认自动）。
+            user_content: 可选，本轮用户输入原文；提供后连用户发言一并存档，还原完整一轮。
+            section: 分类（默认「对话记录」）。
+            tags: 额外标签（auto_turn 会自动加上）。
+        """
+        res = _core_auto_save_turn(
+            agent=agent,
+            content=content,
+            user_content=user_content,
+            section=section,
+            tags=tags,
+        )
+        return json.dumps(res, ensure_ascii=False)
 
     @mcp.tool()
     def update_memory(

@@ -18,7 +18,7 @@ from datetime import date, datetime
 
 # ─── Paths ────────────────────────────────────────────────────
 
-__version__ = "2.0.0"
+__version__ = "2.0.1"
 _HPD = os.environ.get("HERO_PEN_DIR", "")
 if _HPD:
     HERO_PEN_DIR = _HPD
@@ -987,6 +987,87 @@ def store_memory(
     return {
         "written": False, "buffered": len(items), "flushed": flushed, "mode": "chunk",
         "reason": reason or "大块存储 → 攒批落档",
+    }
+
+
+# ─── Per-turn auto-save hook (2.0.1) ─────────────────────────
+# 「每轮自动存档钩子」：宿主 / 网关在每轮 assistant 回复完成后调用，把本轮
+# 对话提交给存储内核。与「落档频率（存储模式）」两层正交——钩子只负责「每轮提交」，
+# 落库时机仍由 sentence/chunk/auto 决定。
+#
+# 铁律：落库走 store_memory（事实库 SSOT），**严禁** session_checkpoint。
+# 断点表是崩溃恢复基础设施，每轮调会每轮爆一条、且语义 ≠ 记忆事实。
+# source 固定 auto_turn，便于与显式 add 区分、必要时整体回滚（heropen 只标不删）。
+AUTO_TURN_SOURCE = "auto_turn"
+
+
+def auto_save_turn(
+    agent: str | None,
+    content: str,
+    user_content: str = "",
+    section: str = "",
+    tags: str = "",
+    entry_date: str = "",
+) -> dict:
+    """每轮自动存档钩子（2.0.1）。
+
+    宿主 / 网关在每轮 assistant 回复完成后调用；把本轮对话提交给存储内核，
+    落库时机由该 agent 的存储模式决定（sentence 立即落 / chunk 攒批 / auto 智能选），
+    与「是否每轮提交」两层正交。
+
+    Args:
+        agent: 哪个 agent 的记忆（默认自动）。
+        content: 本轮 assistant 回复原文（必填，空则跳过）。
+        user_content: 可选，本轮用户输入原文；提供后连用户发言一并存档，还原完整一轮。
+        section: 分类（默认「对话记录」）。
+        tags: 额外标签（auto_turn 会自动加上）。
+        entry_date: 日期（默认今天）。
+
+    Returns:
+        {"saved", "buffered", "flushed", "parts", "source", "skipped"?}
+    """
+    from datetime import date
+
+    agent = agent or get_default_agent()
+    ed = entry_date if entry_date else date.today().isoformat()
+    parts: list[dict] = []
+
+    # 1) 先存用户本轮输入（可选）—— 完整还原一轮对话
+    if user_content and user_content.strip():
+        r = store_memory(
+            agent=agent,
+            entry_date=ed,
+            content=user_content.strip()[:5000],
+            section="用户输入",
+            tags=(tags + ",auto_turn,user").strip(","),
+            source=AUTO_TURN_SOURCE,
+        )
+        parts.append({"kind": "user", **r})
+
+    # 2) 存 assistant 本轮回复（主体）
+    if content and content.strip():
+        r = store_memory(
+            agent=agent,
+            entry_date=ed,
+            content=content.strip()[:5000],
+            section=section or "对话记录",
+            tags=(tags + ",auto_turn").strip(","),
+            source=AUTO_TURN_SOURCE,
+        )
+        parts.append({"kind": "assistant", **r})
+
+    if not parts:
+        return {"saved": 0, "skipped": True, "reason": "empty_turn", "source": AUTO_TURN_SOURCE}
+
+    saved = sum(1 for r in parts if r.get("written"))
+    buffered = sum(r.get("buffered", 0) for r in parts)
+    flushed = sum(r.get("flushed", 0) for r in parts)
+    return {
+        "saved": saved,
+        "buffered": buffered,
+        "flushed": flushed,
+        "parts": len(parts),
+        "source": AUTO_TURN_SOURCE,
     }
 
 

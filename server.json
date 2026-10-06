@@ -3,7 +3,7 @@
   "name": "net.heropen/heropen",
   "title": "heropen — AI Agent Memory",
   "description": "Persistent memory for AI agents: local-first MCP server, zero-config. No cloud, no API keys.",
-  "version": "2.0.0",
+  "version": "2.0.1",
   "websiteUrl": "https://heropen.net",
   "repository": {
     "url": "https://github.com/Koradji77/heropen",
@@ -13,7 +13,7 @@
     {
       "registryType": "pypi",
       "identifier": "heropen",
-      "version": "2.0.0",
+      "version": "2.0.1",
       "runtimeHint": "uvx",
       "packageArguments": [
         {
