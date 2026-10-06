@@ -458,6 +458,13 @@ def create_mcp_server():
             user_content: 可选，本轮用户输入原文；提供后连用户发言一并存档，还原完整一轮。
             section: 分类（默认「对话记录」）。
             tags: 额外标签（auto_turn 会自动加上）。
+
+        Returns (JSON):
+            {"saved": int, "buffered": int, "flushed": int, "source": "auto_turn",
+             "parts": [{"kind": "user"|"assistant", "written": bool, "id"?: int,
+                        "buffered"?: int, "flushed"?: int,
+                        "mode": "sentence"|"chunk", "reason": str}, ...]}
+            parts 为逐条明细数组（2.0.3 起），可遍历查看每条走了哪个模式及原因。
         """
         res = _core_auto_save_turn(
             agent=agent,

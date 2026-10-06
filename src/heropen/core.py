@@ -18,7 +18,7 @@ from datetime import date, datetime
 
 # ─── Paths ────────────────────────────────────────────────────
 
-__version__ = "2.0.2"
+__version__ = "2.0.3"
 _HPD = os.environ.get("HERO_PEN_DIR", "")
 if _HPD:
     HERO_PEN_DIR = _HPD
@@ -843,11 +843,25 @@ def build_signature(agent: str | None = None) -> str:
 TRAY_STATE_FILE = os.path.join(HERO_PEN_DIR, "_tray_state.json")
 STORAGE_MODES = ("chunk", "sentence", "auto")
 DEFAULT_STORAGE_MODE = "auto"
-# auto 判定触发词（可解释）：命中 → 宁碎勿丢，立即落档
-SENTENCE_TRIGGER_RE = re.compile(
-    r"(记住|记得|决定|定了|路径|偏好|约定|以后|别再|一定|必须|项目|端口|密钥|token|账号|规则)",
-    re.I,
+# auto 判定触发词（可解释）：命中 → 宁碎勿丢，立即落档。
+# 默认表内置；设 HEROPEN_SENTENCE_TRIGGERS（逗号/竖线分隔）可整表覆盖，不发版即可调
+# （2.0.3：按实测反馈扩充业务高频词——答案/改成/入库/截止/版本/发版/删除/作废/命名/对齐）。
+DEFAULT_SENTENCE_TRIGGERS = (
+    r"记住|记得|决定|定了|路径|偏好|约定|以后|别再|一定|必须|项目|端口|密钥|token|账号|规则"
+    r"|答案|改成|入库|截止|版本|发版|删除|作废|命名|对齐"
 )
+_SENTENCE_TRIGGER_CACHE: tuple[str, "re.Pattern[str]"] = ("", re.compile(DEFAULT_SENTENCE_TRIGGERS, re.I))
+
+
+def _sentence_trigger_re() -> "re.Pattern[str]":
+    """当前生效的触发词正则（env 覆盖优先，缓存编译结果）。"""
+    global _SENTENCE_TRIGGER_CACHE
+    raw = (os.environ.get("HEROPEN_SENTENCE_TRIGGERS") or "").strip()
+    if raw != _SENTENCE_TRIGGER_CACHE[0]:
+        words = [w.strip() for w in re.split(r"[,，|]", raw) if w.strip()] if raw else []
+        pattern = "|".join(re.escape(w) for w in words) if words else DEFAULT_SENTENCE_TRIGGERS
+        _SENTENCE_TRIGGER_CACHE = (raw, re.compile(pattern, re.I))
+    return _SENTENCE_TRIGGER_CACHE[1]
 CHUNK_FLUSH_THRESHOLD = 6  # 缓冲区攒够这么多条就自动落档
 
 
@@ -873,7 +887,7 @@ def get_storage_mode(agent: str | None = None) -> str:
 
 def classify_storage_mode(text: str) -> tuple[str, str]:
     """auto 的判定：返回 (mode, reason)。命中触发词 → sentence，否则 chunk。"""
-    m = SENTENCE_TRIGGER_RE.search(text or "")
+    m = _sentence_trigger_re().search(text or "")
     if m:
         return "sentence", f"命中「{m.group(0)}」→ 一轮一存（宁碎勿丢）"
     return "chunk", "闲聊/日常 → 大块存储（攒批落档）"
@@ -1025,6 +1039,10 @@ def auto_save_turn(
 
     Returns:
         {"saved", "buffered", "flushed", "parts", "source", "skipped"?}
+        parts 为逐条明细数组（2.0.3 起为数组，2.0.1/2.0.2 曾为计数）：
+        [{"kind": "user"|"assistant", "written": bool, "id"?: int,
+          "buffered"?: int, "flushed"?: int, "mode": "sentence"|"chunk", "reason": str}, ...]
+        调用方可遍历 parts 查每条走了哪个模式及原因。
     """
     from datetime import date
 
@@ -1066,7 +1084,7 @@ def auto_save_turn(
         "saved": saved,
         "buffered": buffered,
         "flushed": flushed,
-        "parts": len(parts),
+        "parts": parts,  # 2.0.3: 逐条明细数组（kind + mode/reason），供网关遍历
         "source": AUTO_TURN_SOURCE,
     }
 
