@@ -18,7 +18,7 @@ from datetime import date, datetime
 
 # ─── Paths ────────────────────────────────────────────────────
 
-__version__ = "2.0.1"
+__version__ = "2.0.2"
 _HPD = os.environ.get("HERO_PEN_DIR", "")
 if _HPD:
     HERO_PEN_DIR = _HPD

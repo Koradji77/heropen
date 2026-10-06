@@ -388,126 +388,6 @@ def cmd_install(args: object) -> None:
         _install_plain()
 
 
-def _show_copy_text_dialog(agent_name: str = "") -> None:
-    """Show a tkinter dialog with one-click copy of AI instruction text."""
-    # Try to read real agent name from existing config
-    if not agent_name:
-        try:
-            with open(AGENT_CONFIG_PATH, "r", encoding="utf-8") as f:
-                cfg = json.load(f)
-            agents = cfg.get("agents", [])
-            if agents:
-                agent_name = agents[0]["name"]
-        except Exception:
-            pass
-
-    if agent_name:
-        name_line = f"你叫 {agent_name}，现在拥有 heropen 记忆系统。\n"
-        agent_arg = f'  agent: "{agent_name}"\n'
-    else:
-        name_line = "你现在拥有 heropen 记忆系统。\n"
-        agent_arg = "  agent: \"你的名字\"\n"
-
-    text = (
-        "【heropen 身份配置 — 请存入你的长期记忆】\n"
-        "\n"
-        + name_line +
-        "\n"
-        "MCP 服务已就绪，连接方式：\n"
-        "  MCP 配置名：heropen\n"
-        "  启动命令：heropen-mcp\n"
-        "  类型：stdio\n"
-        "\n"
-        "每次对话开始时，先调用 search_memory 工具（MCP 工具，不是命令行）：\n"
-        '  query: "最近的对话"\n'
-        + agent_arg +
-        "\n"
-        "每次对话结束前，调用 add_memory 工具（MCP 工具）保存本次对话：\n"
-        '  section: "对话记录"\n'
-        "  content: （本次对话的摘要——你自己总结，抓住重点）\n"
-        + agent_arg +
-        "\n"
-        "以后回答时，看到跟记忆里已有信息相关的话题，\n"
-        "先调 search_memory 看看之前说过什么，避免重复问用户。\n"
-        "\n"
-        "【结束】"
-    )
-
-    try:
-        import tkinter as tk
-        from tkinter import scrolledtext
-
-        root = tk.Tk()
-        root.title("heropen — 复制给AI助手")
-        root.geometry("520x400")
-        root.resizable(False, False)
-        root.attributes("-topmost", True)
-
-        frame = tk.Frame(root, padx=20, pady=16)
-        frame.pack(fill=tk.BOTH, expand=True)
-
-        tk.Label(
-            frame,
-            text="🖊  heropen 已安装",
-            font=("Microsoft YaHei", 14, "bold"),
-            fg="#333"
-        ).pack(anchor=tk.W, pady=(0, 8))
-
-        tk.Label(
-            frame,
-            text="复制下面这段话发给你的AI助手，它会自己配置：",
-            font=("Microsoft YaHei", 10),
-            fg="#666",
-            wraplength=480
-        ).pack(anchor=tk.W, pady=(0, 12))
-
-        txt = scrolledtext.ScrolledText(
-            frame, wrap=tk.WORD, height=10,
-            font=("Consolas", 11),
-            bg="#f8f8f8", fg="#333",
-            relief=tk.FLAT, borderwidth=1,
-        )
-        txt.insert(tk.END, text)
-        txt.config(state=tk.DISABLED)
-        txt.pack(fill=tk.BOTH, expand=True, pady=(0, 12))
-
-        def copy():
-            root.clipboard_clear()
-            root.clipboard_append(text)
-            btn.config(text="✅ 已复制!", bg="#d4edda", fg="#333")
-            btn.config(state=tk.DISABLED)
-            root.after(2000, root.destroy)
-
-        btn = tk.Button(
-            frame,
-            text="📋 一键复制",
-            command=copy,
-            font=("Microsoft YaHei", 12, "bold"),
-            bg="#4a90d9", fg="white",
-            relief=tk.FLAT, padx=20, pady=8,
-            cursor="hand2",
-            activebackground="#357abd"
-        )
-        btn.pack(pady=(0, 4))
-
-        tk.Label(
-            frame,
-            text="复制后，在你的AI助手对话框里粘贴发送即可",
-            font=("Microsoft YaHei", 9),
-            fg="#999",
-        ).pack()
-
-        root.mainloop()
-    except ImportError:
-        # No tkinter — terminal fallback
-        print("\n" + "═" * 50)
-        print("🖊  heropen 已安装！请复制下面这段话发给你的AI助手：")
-        print("═" * 50)
-        print(text)
-        print("═" * 50)
-        print()
-
-
 def _install_with_detect() -> None:
     """``heropen install --detect`` — auto-detect calling agent and configure."""
     from heropen.auto_mcp import auto_setup_mcp, print_setup_summary, _is_sse_server_running
@@ -569,8 +449,7 @@ def _install_with_detect() -> None:
                 return
         else:
             print("\n⚠️  未能自动检测到 AI 助手。")
-            print("   弹出配置窗口，复制后发给你的 AI 助手即可。")
-            _show_copy_text_dialog()
+            print("   请手动运行：heropen install，或参考 https://heropen.net/docs/")
             return
 
     # Normal case: configs were found
@@ -591,9 +470,6 @@ def _install_with_detect() -> None:
     if not result.get("sse_started") and any("WorkBuddy" in i for i in result.get("configured", [])):
         print("\n   💡 如需自动启动 SSE 服务，请在 Windows 上运行：")
         print("      heropen-mcp --http")
-
-    # Always show the copy dialog as a reliable fallback
-    _show_copy_text_dialog()
 
 
 def cmd_first_run() -> None:
@@ -695,12 +571,6 @@ heropen 是一个 AI 长期记忆系统。装在电脑上之后，AI 助手可�
 
     print(text)
     print()
-    # 首次运行自动打开本地面板（Plan-C）一次，让用户立刻看到入口
-    try:
-        from heropen.panel import cmd_panel
-        cmd_panel([])
-    except Exception:
-        pass
 
 
 def _print_banner(use_rich: bool = False) -> None:
