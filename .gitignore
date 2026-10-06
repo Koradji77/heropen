@@ -16,3 +16,13 @@ venv/
 # (hatchling's sdist follows VCS ignore rules; pyproject.toml also excludes these.)
 _tmp_*
 
+# Windows reserved device name. Git-Bash `2>nul` (instead of `2>/dev/null`) can
+# materialize a real 0-byte file named `nul` in the working tree; the kernel
+# treats it as the NUL device and it cannot be deleted via normal APIs. Excluding
+# it here keeps `git add -A` from failing with "invalid path 'nul'".
+nul
+
+# release build artifacts — never commit, never ship in sdist
+_build*/
+_mkrelease.py
+
