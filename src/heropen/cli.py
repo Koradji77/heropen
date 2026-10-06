@@ -142,7 +142,7 @@ def main():
         except ImportError:
             print("托盘角标需要 heropen[tray] 扩展，请先安装：pip install 'heropen[tray]'")
             sys.exit(1)
-        tray_main()
+        tray_main(args[1:])
     else:
         print(f"heropen: unknown command '{cmd}'")
         print_help()

@@ -820,12 +820,12 @@ class TrayApp:
 # ---------------------------------------------------------------- main
 
 
-def main() -> int:
+def main(argv: list[str] | None = None) -> int:
     ap = argparse.ArgumentParser(prog="heropen tray")
     ap.add_argument("--selftest", action="store_true", help="只生成图标/打印 tooltip 并退出")
     ap.add_argument("--mock", action="store_true", help="强制使用内置 mock 数据（演示大数字）")
     ap.add_argument("--stop", action="store_true", help="停掉正在运行的托盘实例并退出")
-    args = ap.parse_args()
+    args = ap.parse_args(argv)
 
     if args.stop:
         return 0 if stop_previous() else 1
