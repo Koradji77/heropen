@@ -995,7 +995,13 @@ SESSION_SECTION = "⚡ 会话断点"
 SESSION_TAG = "session-checkpoint"
 
 def session_checkpoint(agent, context_summary="", active_task="", key_decisions=None, tags=""):
-    """Save current session checkpoint."""
+    """Save current session checkpoint.
+
+    注意：断点**故意绕过** store_memory / 存储模式，直接 add_entry 即时落库。
+    断点是崩溃恢复基础设施（不是「记忆事实」语义），若走 chunk 攒批、
+    进程在 flush 前崩溃就会丢断点、丧失续接能力。所以无论用户切 chunk/sentence/auto，
+    断点永远立即写。这是有意设计，不是遗漏。
+    """
     from datetime import date, datetime
     import json
     if key_decisions is None:

@@ -654,7 +654,7 @@ class TrayApp:
         def handler(icon, item):
             self.state.setdefault("modes", {})[agent] = mode
             self._refresh()
-            # 诚实提示：仅保存偏好，未接入内核、暂未生效
+            # 模式已实时写入 state，get_storage_mode 即时读 → 落档策略真实生效
             try:
                 icon.notify(
                     f"已设置「{agent}」的存储模式：{LABEL[mode]}"
@@ -770,7 +770,7 @@ class TrayApp:
             pystray.MenuItem(
                 "存储模式（按 agent 分别设置）",
                 pystray.Menu(
-                    # 诚实声明：规划项，暂仅记录偏好
+                    # 模式已接入内核：决定落档频率与粒度（实时生效）
                     pystray.MenuItem("已接入内核：决定落档频率与粒度", None, enabled=False),
                     pystray.Menu.SEPARATOR,
                     *[
