@@ -174,7 +174,6 @@ mcp_servers:
 heropen add "……" --tags "a,b"     # 写入
 heropen search "关键词"            # 检索
 heropen status                     # 统计
-heropen panel                      # 本地面板（存在感入口）
 heropen export                     # 备份
 ```
 
