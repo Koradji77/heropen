@@ -106,12 +106,6 @@ def main():
     elif cmd in ("entities",):
         from heropen.cli_commands import cmd_entities
         cmd_entities(args[1:])
-    elif cmd in ("capture",):
-        from heropen.cli_commands import cmd_capture
-        cmd_capture(args[1:])
-    elif cmd in ("sync",):
-        from heropen.cli_commands import cmd_sync
-        cmd_sync(args[1:])
     elif cmd in ("init-all",):
         from heropen.cli_commands import cmd_init_all
         cmd_init_all(args[1:])
@@ -124,9 +118,6 @@ def main():
     elif cmd in ("session",):
         from heropen.cli_commands import cmd_session
         cmd_session(args[1:])
-    elif cmd == "panel":
-        from heropen.panel import cmd_panel
-        cmd_panel(args[1:])
     elif cmd == "viewer":
         from heropen.viewer_server import main as viewer_main
         viewer_main()
@@ -170,8 +161,6 @@ Commands:
     status          Database statistics
     entities        View knowledge graph
     bootstrap       Agent memory startup summary
-    capture         Auto-capture key sentences from stdin
-    sync            Sync from diary.md to database
     embed           Generate embeddings for existing entries
     backup          Export memories to JSON
     restore         Import memories from JSON backup
@@ -179,7 +168,6 @@ Commands:
     session         Save or recover session checkpoint
     diagnose        Run system diagnostics (config, DB, connectivity, version)
     doctor          工程税自检（写入纪律 / Prompt Cache / 容量 / Embedding 迁移 / 端口安全）
-    panel           打开本地记忆面板（Plan-C，一条命令）
     viewer          Launch web viewer (http://127.0.0.1:9020)
     tray            Windows 系统托盘角标（常驻存在感 + 工作台，需 heropen[tray]）
     mcp             Start MCP server

@@ -24,7 +24,6 @@ if _HPD:
     HERO_PEN_DIR = _HPD
 else:
     HERO_PEN_DIR = os.path.expanduser("~/.heropen")
-DIARY_FILE = os.path.join(HERO_PEN_DIR, "diary.md")
 BACKUP_DIR = os.path.join(HERO_PEN_DIR, "backups")
 BACKUP_KEEP_LOCAL = 3
 BACKUP_KEEP_REMOTE = 7
@@ -1498,64 +1497,6 @@ def search_shared(agent: str, limit: int = 10) -> list:
         return []
 
 
-# ─── Auto capture ──────────────────────────────────────────────
-
-CAPTURE_USER_TRIGGERS = ["记住", "记一下", "记", "这个重要", "别忘了", "关键", "重点", "结论", "核心", "铁律", "规则", "要记得", "记着"]
-CAPTURE_ASSISTANT_TRIGGERS = ["所以", "结论", "答案是", "总结", "已写入memory", "已记录"]
-
-
-def capture_session_content(text: str, agent: str | None = None) -> int:
-    if agent is None:
-        agent = get_default_agent()
-    if not text:
-        return 0
-    lines = text.split("\n")
-    captured = []
-    for line in lines:
-        stripped = line.strip()
-        if not stripped:
-            continue
-        is_user = False
-        if stripped.startswith("用户:") or stripped.startswith("User:"):
-            is_user = True
-            stripped = stripped.split(":", 1)[1].strip()
-        elif stripped.startswith("助理:") or stripped.startswith("Assistant:"):
-            is_user = False
-            stripped = stripped.split(":", 1)[1].strip()
-        else:
-            if len(stripped) < 10:
-                continue
-        if is_user:
-            lower = stripped.lower()
-            if any(t in lower for t in CAPTURE_USER_TRIGGERS):
-                captured.append(stripped)
-            elif len(stripped) >= 60 and re.search(r"[A-Z][a-z]+|[\u4e00-\u9fff]{4,}机|[\u4e00-\u9fff]{2,}项目|API|GPU|CPU|模型|配置", stripped):
-                captured.append(stripped)
-        else:
-            lower = stripped.lower()
-            if any(t in lower for t in CAPTURE_ASSISTANT_TRIGGERS):
-                for t in CAPTURE_ASSISTANT_TRIGGERS:
-                    idx = lower.find(t)
-                    if idx >= 0:
-                        conclusion = stripped[idx + len(t):].strip()
-                        if conclusion and len(conclusion) > 10:
-                            captured.append(f"[结论] {conclusion}")
-                        break
-    if not captured:
-        return 0
-    seen = set()
-    unique = []
-    for c in captured:
-        key = c[:50]
-        if key not in seen:
-            seen.add(key)
-            unique.append(c)
-    section = f"自动捕获 {date.today().isoformat()} {datetime.now().strftime('%H:%M')}"
-    content = "\n".join(unique)
-    entry_id = add_entry(date.today().isoformat(), content, section, "自动捕获", agent, "auto_capture")
-    return len(unique) if entry_id else 0
-
-
 # ─── Auto tag ──────────────────────────────────────────────────
 
 def auto_tag(section: str, content: str) -> str:
@@ -1576,76 +1517,6 @@ def auto_tag(section: str, content: str) -> str:
                 tags.add(tag)
                 break
     return ",".join(sorted(tags)) if tags else "其他"
-
-
-# ─── Diary parsing ─────────────────────────────────────────────
-
-def parse_diary(filepath: str | None = None) -> list:
-    fp = filepath or DIARY_FILE
-    if not os.path.exists(fp):
-        return []
-    with open(fp, "r", encoding="utf-8") as f:
-        text = f.read()
-    entries: list = []
-    current_date = None
-    current_section = None
-    current_content: list[str] = []
-    for line in text.split("\n"):
-        m = re.match(r"^##\s+(\d{4}-\d{2}-\d{2})", line)
-        if m:
-            if current_date and current_content:
-                entries.append({
-                    "date": current_date,
-                    "section": current_section or "",
-                    "content": "\n".join(current_content).strip(),
-                    "tags": auto_tag(current_section or "", "\n".join(current_content)),
-                })
-            current_date = m.group(1)
-            current_section = None
-            current_content = []
-            continue
-        m = re.match(r"^###\s+(.+)$", line)
-        if m and current_date:
-            if current_section is not None and current_content:
-                entries.append({
-                    "date": current_date,
-                    "section": current_section,
-                    "content": "\n".join(current_content).strip(),
-                    "tags": auto_tag(current_section, "\n".join(current_content)),
-                })
-            current_section = m.group(1).strip()
-            current_content = []
-            continue
-        if current_date and line.strip():
-            current_content.append(line)
-    if current_date and current_content:
-        entries.append({
-            "date": current_date,
-            "section": current_section or "",
-            "content": "\n".join(current_content).strip(),
-            "tags": auto_tag(current_section or "", "\n".join(current_content)),
-        })
-    return entries
-
-
-def sync_to_db(agent: str | None = None) -> int:
-    if agent is None:
-        agent = get_default_agent()
-    entries = parse_diary()
-    if not entries:
-        return 0
-    c = conn(agent)
-    existing = set()
-    for row in c.execute("SELECT entry_date, section FROM entries WHERE source='diary'"):
-        existing.add((row["entry_date"], row["section"]))
-    c.close()
-    count = 0
-    for e in entries:
-        if (e["date"], e["section"]) in existing:
-            continue
-        add_entry(e["date"], e["content"], e["section"], e["tags"], agent, "diary")
-        count += 1
-    return count
 
 
 # ─── Memory hygiene (C4: flag-only, never delete) ─────────────

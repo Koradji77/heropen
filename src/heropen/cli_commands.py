@@ -19,7 +19,6 @@ from heropen.core import (
     add_entry,
     auto_tag,
     build_signature,
-    capture_session_content,
     conn,
     db_path,
     flush_pending,
@@ -27,7 +26,6 @@ from heropen.core import (
     get_embedding,
     init_db,
     integrity_check,
-    parse_diary,
     search_by_date,
     search_by_tag,
     search_fts,
@@ -35,7 +33,6 @@ from heropen.core import (
     search_recent,
     search_vector,
     startup_self_heal,
-    sync_to_db,
     format_recall,
     HERO_PEN_DIR,
     __version__,
@@ -178,12 +175,6 @@ def cmd_auto_setup(args: list[str]) -> None:
     print_setup_summary(result)
 
 
-def cmd_sync(args: list[str]) -> None:
-    agent = _resolve_agent(args)
-    n = sync_to_db(agent)
-    print(f"✅ 同步完成，新增 {n} 条记录")
-
-
 def cmd_recall(args: list[str]) -> None:
     if _has_help(args):
         print("用法: heropen recall \"查询词\" [--agent 名称] [--limit 数量] [--fts] [--graph] [--date YYYY-MM-DD] [--tag 标签] [--last N] [--today]")
@@ -316,19 +307,6 @@ def cmd_add(args: list[str]) -> None:
         print("      可运行 `heropen embed` 或设置 EMBEDDING_ENDPOINT 后重试。")
 
 
-def cmd_capture(args: list[str]) -> None:
-    agent = _resolve_agent(args)
-    text = sys.stdin.read()
-    if not text:
-        print("❌ 没有输入内容（请通过管道传入）")
-        return
-    count = capture_session_content(text, agent)
-    if count > 0:
-        print(f"✅ 自动捕获完成：{count} 条关键句已存入 [{agent}]")
-    else:
-        print("ℹ️ 没有捕获到关键信息")
-
-
 # ─── Status ─────────────────────────────────────────────────────
 
 def cmd_status(args: list[str]) -> None:
@@ -397,7 +375,7 @@ def cmd_entities(args: list[str]) -> None:
         print(f"   {r['entity_a']} ═══ {r['entity_b']}  {bar} ({r['strength']:.1f})")
 
 
-# ─── Export / Import / Delete / Embed ───────────────────────────
+# ─── Export / Import / Embed ───────────────────────────
 
 def cmd_export(args: list[str]) -> None:
     agent = _resolve_agent(args)

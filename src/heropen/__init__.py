@@ -14,7 +14,6 @@ __all__ = [
     "init_db", "conn", "db_path",
     "get_embedding", "cosine_similarity",
     "get_embedding_status", "is_arm64", "embedding_install_hint",
-    "capture_session_content",
     "AGENTS",
 ]
 
@@ -39,6 +38,5 @@ from heropen.core import (
     get_embedding_status,
     is_arm64,
     embedding_install_hint,
-    capture_session_content,
     AGENTS,
 )
