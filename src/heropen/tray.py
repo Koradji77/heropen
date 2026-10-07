@@ -95,6 +95,8 @@ I18N = {
         "lang_menu": "Language / 语言",
         "storage_menu": "存储模式（按 agent 分别设置）",
         "kernel_note": "已接入内核：决定落档频率与粒度",
+        "reset_modes": "恢复默认（全员 Auto）",
+        "notify_reset": "已恢复默认：所有 agent 存储模式 = 自动识别",
         "mode_chunk": "大块存储",
         "mode_sentence": "一轮一存",
         "mode_auto": "自动识别",
@@ -160,6 +162,8 @@ I18N = {
         "lang_menu": "Language / 语言",
         "storage_menu": "Storage mode (per agent)",
         "kernel_note": "Wired into the core: controls write frequency & granularity",
+        "reset_modes": "Reset all to Auto",
+        "notify_reset": "Reset done: all agents now use Auto",
         "mode_chunk": "Chunk (batched)",
         "mode_sentence": "Per-turn",
         "mode_auto": "Auto",
@@ -226,6 +230,8 @@ I18N = {
         "lang_menu": "Language / 语言",
         "storage_menu": "保存モード（agent ごとに設定）",
         "kernel_note": "コアに統合済み：保存の頻度と粒度を決定",
+        "reset_modes": "デフォルトに戻す（全員 Auto）",
+        "notify_reset": "リセット完了：すべての agent の保存モードを Auto に戻しました",
         "mode_chunk": "チャンク保存",
         "mode_sentence": "毎ターン保存",
         "mode_auto": "自動判定",
@@ -290,6 +296,8 @@ I18N = {
         "lang_menu": "Language / 语言",
         "storage_menu": "저장 모드(agent별 설정)",
         "kernel_note": "코어에 통합됨: 저장 빈도와 세밀도 결정",
+        "reset_modes": "기본값으로 재설정(모두 Auto)",
+        "notify_reset": "초기화 완료: 모든 agent 저장 모드 = 자동",
         "mode_chunk": "청크 저장",
         "mode_sentence": "턴별 저장",
         "mode_auto": "자동 판별",
@@ -354,6 +362,8 @@ I18N = {
         "lang_menu": "Language / 语言",
         "storage_menu": "Modo de almacenamiento (por agente)",
         "kernel_note": "Integrado en el núcleo: controla frecuencia y granularidad de escritura",
+        "reset_modes": "Restablecer todo a Auto",
+        "notify_reset": "Restablecido: todos los agentes usan Auto",
         "mode_chunk": "Bloques (lote)",
         "mode_sentence": "Por turno",
         "mode_auto": "Automático",
@@ -418,6 +428,8 @@ I18N = {
         "lang_menu": "Language / 语言",
         "storage_menu": "Mode de stockage (par agent)",
         "kernel_note": "Intégré au noyau : contrôle la fréquence et la granularité d'écriture",
+        "reset_modes": "Tout réinitialiser en Auto",
+        "notify_reset": "Réinitialisé : tous les agents utilisent Auto",
         "mode_chunk": "Blocs (lot)",
         "mode_sentence": "Par tour",
         "mode_auto": "Auto",
@@ -482,6 +494,8 @@ I18N = {
         "lang_menu": "Language / 语言",
         "storage_menu": "Speichermodus (pro Agent)",
         "kernel_note": "Im Kern integriert: steuert Schreibfrequenz und -granularität",
+        "reset_modes": "Alle auf Auto zurücksetzen",
+        "notify_reset": "Zurückgesetzt: alle Agenten verwenden jetzt Auto",
         "mode_chunk": "Blöcke (Stapel)",
         "mode_sentence": "Pro Runde",
         "mode_auto": "Automatisch",
@@ -546,6 +560,8 @@ I18N = {
         "lang_menu": "Language / 语言",
         "storage_menu": "Modo de armazenamento (por agente)",
         "kernel_note": "Integrado ao núcleo: controla frequência e granularidade da gravação",
+        "reset_modes": "Restaurar padrão (todos Auto)",
+        "notify_reset": "Restaurado: todos os agentes usam Auto",
         "mode_chunk": "Blocos (lote)",
         "mode_sentence": "Por turno",
         "mode_auto": "Automático",
@@ -610,6 +626,8 @@ I18N = {
         "lang_menu": "Language / 语言",
         "storage_menu": "Режим хранения (по агентам)",
         "kernel_note": "Встроено в ядро: задаёт частоту и детализацию записи",
+        "reset_modes": "Сбросить все в Auto",
+        "notify_reset": "Сброшено: все агенты используют Auto",
         "mode_chunk": "Блоками (пакет)",
         "mode_sentence": "За каждый ход",
         "mode_auto": "Авто",
@@ -1278,6 +1296,25 @@ class TrayApp:
                 pass
         return handler
 
+    def reset_all_modes(self):
+        """一键恢复默认：所有 agent 存储模式重置为 auto（即时生效 + 持久化）。"""
+        def handler(icon, item):
+            for ag in list(self.state.get("modes", {}).keys()):
+                self.state["modes"][ag] = "auto"
+            self.state.pop("default_mode", None)  # 兜底：清掉历史遗留的 default_mode 覆盖
+            self._refresh()
+            # agent 顶层的 radio 勾选状态是静态构建的，整体重建
+            try:
+                icon.menu = self._build_menu()
+                icon.update_menu()
+            except Exception:
+                pass
+            try:
+                icon.notify(tr(self.lang, "notify_reset"), "heropen")
+            except Exception:
+                pass
+        return handler
+
     def set_lang(self, lang: str):
         """切换显示语言（radio）：写入 state、重建菜单、刷 tooltip，即时生效。"""
         def handler(icon, item):
@@ -1407,6 +1444,7 @@ class TrayApp:
                 pystray.Menu(
                     # 模式已接入内核：决定落档频率与粒度（实时生效）
                     pystray.MenuItem(tr(L, "kernel_note"), None, enabled=False),
+                    pystray.MenuItem(tr(L, "reset_modes"), self.reset_all_modes()),
                     pystray.Menu.SEPARATOR,
                     *[
                         pystray.MenuItem(
