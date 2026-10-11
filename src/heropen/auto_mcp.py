@@ -47,19 +47,60 @@ heropen_sse_config = {
 
 
 # ─── Windows scheduled task ──────────────────────────────
+# ⚠️ 后台常驻服务不得出现控制台窗口。schtasks 若直接运行 heropen-mcp.exe
+# （控制台程序），登录时会弹出可见黑窗（≤2.0.5 的缺陷）。因此统一改由
+# wscript.exe 执行一个隐藏启动器 VBS（窗口样式 0 = 隐藏）来拉起服务。
+def _hidden_launcher_path() -> Path:
+    """Path of the VBS launcher used to start heropen-mcp --http hidden."""
+    base = Path(os.environ.get("LOCALAPPDATA", str(_HOME))) / "heropen"
+    return base / "heropen-mcp-hidden.vbs"
+
+
+def _write_hidden_launcher(exe_path: str) -> str | None:
+    """Write a VBS that launches heropen-mcp --http with a hidden window.
+
+    Returns the launcher path on success, else None.
+    """
+    p = _hidden_launcher_path()
+    try:
+        p.parent.mkdir(parents=True, exist_ok=True)
+        # WScript.Shell.Run(cmd, intWindowStyle, bWaitOnReturn): 0 = 隐藏窗口
+        content = (
+            'CreateObject("WScript.Shell").Run '
+            '"""%s"" --http", 0, False\r\n' % exe_path
+        )
+        p.write_text(content, encoding="utf-8")
+        return str(p)
+    except OSError:
+        return None
+
+
 def _register_windows_scheduled_task() -> bool:
-    """Register a Windows scheduled task to auto-start heropen-mcp --http at logon."""
+    """Register a Windows scheduled task to auto-start heropen-mcp --http at logon.
+
+    The task runs ``wscript.exe <hidden launcher.vbs>`` so no console window
+    appears. Legacy tasks that invoked the .exe directly (visible window) are
+    overwritten via ``/f``.
+    """
     if sys.platform != "win32":
         return True
-    import subprocess
     task_name = "heropenMCP"
     # Try to find heropen-mcp.exe
     exe_path = _find_heropen_mcp_exe()
     if not exe_path:
         return False
-    if _schtasks_query(task_name):
+    launcher = _write_hidden_launcher(exe_path)
+    if not launcher:
+        return False
+    # Up-to-date (already runs via wscript) → nothing to do.
+    if _schtasks_query(task_name) and _schtasks_uses_hidden_launcher(task_name):
+        _cleanup_legacy_autostart()
         return True
-    return _schtasks_create(task_name, exe_path)
+    # Create or overwrite (migrates legacy visible-task to hidden launcher).
+    ok = _schtasks_create(task_name, launcher)
+    if ok:
+        _cleanup_legacy_autostart()
+    return ok
 
 
 def _schtasks_query(task_name: str) -> bool:
@@ -78,23 +119,63 @@ def _schtasks_query(task_name: str) -> bool:
     return r.returncode == 0
 
 
-def _schtasks_create(task_name: str, exe_path: str) -> bool:
+def _schtasks_uses_hidden_launcher(task_name: str) -> bool:
+    """True if the task already runs via wscript + a .vbs launcher (hidden)."""
     import subprocess
     try:
         r = subprocess.run(
+            ["schtasks", "/query", "/tn", task_name, "/fo", "LIST", "/v"],
+            capture_output=True, text=True, encoding="gbk",
+            errors="replace", timeout=10,
+        )
+    except Exception:
+        return False
+    if r.returncode != 0:
+        return False
+    out = (r.stdout or "").lower()
+    # 命令行里同时出现 wscript 与 .vbs 即视为已走隐藏启动
+    return "wscript" in out and ".vbs" in out
+
+
+def _schtasks_create(task_name: str, launcher_path: str) -> bool:
+    """Create/overwrite the logon task to run the hidden VBS launcher."""
+    import subprocess
+    tr = f'wscript.exe "{launcher_path}"'
+    try:
+        r = subprocess.run(
             ["schtasks", "/create", "/tn", task_name,
-             "/tr", f'"{exe_path}" --http',
+             "/tr", tr,
              "/sc", "onlogon", "/rl", "highest", "/f"],
             capture_output=True, text=True, encoding="gbk", timeout=10,
         )
     except (UnicodeDecodeError, LookupError):
         r = subprocess.run(
             ["schtasks", "/create", "/tn", task_name,
-             "/tr", f'"{exe_path}" --http',
+             "/tr", tr,
              "/sc", "onlogon", "/rl", "highest", "/f"],
             capture_output=True, text=True, errors="replace", timeout=10,
         )
     return r.returncode == 0
+
+
+def _cleanup_legacy_autostart() -> None:
+    """Remove legacy Startup-folder launchers that caused duplicate/visible starts."""
+    if sys.platform != "win32":
+        return
+    appdata = os.environ.get("APPDATA")
+    if not appdata:
+        return
+    startup = (
+        Path(appdata) / "Microsoft" / "Windows" / "Start Menu"
+        / "Programs" / "Startup"
+    )
+    for name in ("HeroPenMCP.vbs", "heropenMCP.vbs"):
+        try:
+            f = startup / name
+            if f.exists():
+                f.unlink()
+        except OSError:
+            pass
 
 
 def _find_heropen_mcp_exe() -> str | None:

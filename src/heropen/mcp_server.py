@@ -666,6 +666,25 @@ def create_mcp_server():
     return mcp
 
 
+def _hide_console_window() -> None:
+    """Hide this process's console window on Windows (best effort).
+
+    ``heropen-mcp --http`` is a long-running background service (often started
+    at logon via a scheduled task). It must never leave a visible console
+    window. Any failure is ignored — this is cosmetic only.
+    """
+    if sys.platform != "win32":
+        return
+    try:
+        import ctypes
+
+        hwnd = ctypes.windll.kernel32.GetConsoleWindow()
+        if hwnd:
+            ctypes.windll.user32.ShowWindow(hwnd, 0)  # SW_HIDE
+    except Exception:
+        pass
+
+
 def main(argv: list[str] | None = None):
     """CLI entry for heropen-mcp and `heropen mcp`.
 
@@ -714,6 +733,8 @@ def main(argv: list[str] | None = None):
         pass
 
     if args.http:
+        # 常驻后台服务：不允许出现可见控制台窗口（兜底，防旧任务/手动启动露窗）
+        _hide_console_window()
         host = os.environ.get("HEROPEN_MCP_HOST", "127.0.0.1")
         port = os.environ.get("HEROPEN_MCP_PORT", "8090")
         print(
