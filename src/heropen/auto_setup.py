@@ -148,6 +148,16 @@ def run() -> None:
         # Non-fatal — setup config exists even if marker fails
         pass
 
+    # Step 2.5: 拉起托盘角标（图形工作台 / 存储模式的入口）
+    # 纯 `pip install heropen` 场景不会经过 install.py，这里兜底拉起一次；
+    # 之后开机由角标自身写入的 HKCU Run 键接管。
+    try:
+        from heropen.auto_tray import ensure_tray_running
+        status = ensure_tray_running(verbose=False)
+        _log(f"step 2.5: tray autostart -> {status}")
+    except Exception as e:
+        _log(f"step 2.5 FAILED (non-fatal): {e}")
+
     # Success feedback
     _safe_print("  ✅ heropen 配置成功！重启你的 AI 助手后它就会拥有长期记忆。")
     _safe_print("     工具已注册：search_memory / add_memory / list_memory / health")

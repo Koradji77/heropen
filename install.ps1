@@ -68,10 +68,13 @@ try {
     & $python -m ensurepip --upgrade 2>$null
 }
 
-# ── Step 3: 安装 heropen ──
+# ── Step 3: 安装 heropen（含托盘角标依赖）──
+# 托盘角标是图形工作台与「一步一存 / 存储模式」的入口，属于必装项而非可选扩展。
+# 依赖已在 pyproject 中以 platform_system=="Windows" 并入基础包；此处显式带上
+# [tray] 作为双保险（老版本基础包不含该依赖时也能装上）。
 Write-Host "→ 安装 heropen..." -ForegroundColor Cyan
 try {
-    & $python -m pip install heropen --upgrade
+    & $python -m pip install "heropen[tray]" --upgrade
     Write-Host "✓ heropen 安装完成" -ForegroundColor Green
 } catch {
     Write-Host "✗ heropen 安装失败，请检查网络连接后重试" -ForegroundColor Red
@@ -127,6 +130,22 @@ Write-Host ("━" * 52)
 Write-Host ""
 Write-Host "✨ 安装完成！" -ForegroundColor Green
 Write-Host ""
+
+# ── Step 5: 拉起托盘角标（图形工作台 / 存储模式入口）──
+$trayOk = $false
+try {
+    # 用 pythonw 静默拉起，避免弹出控制台黑窗
+    $pyw = Join-Path (Split-Path $python) "pythonw.exe"
+    if (-not (Test-Path $pyw)) { $pyw = $python }
+    Start-Process -FilePath $pyw -ArgumentList "-m", "heropen.tray" -WindowStyle Hidden | Out-Null
+    Start-Sleep -Milliseconds 800
+    $trayOk = $true
+    Write-Host "🖥  托盘角标已启动（系统托盘右下角）" -ForegroundColor Green
+    Write-Host "   右键角标：查看记忆 / 设置存储模式 / 打开工作台" -ForegroundColor DarkGray
+} catch {
+    Write-Host "⚠  托盘角标未能自动启动；可稍后运行：heropen tray" -ForegroundColor Yellow
+}
+
 if ($viewerReady) {
     Write-Host "  Viewer:    " -NoNewline
     Write-Host "http://127.0.0.1:9020" -ForegroundColor Cyan -NoNewline

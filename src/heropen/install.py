@@ -443,6 +443,7 @@ def _install_with_detect() -> None:
                     print("   ⚠️  SSE 服务未运行，请手动启动：")
                     print("      heropen-mcp --http")
                 print("\n💡 请重启 WorkBuddy 使配置生效。")
+                _ensure_tray_after_install()
                 return
             except OSError as e:
                 print(f"\n❌ 写入失败：{mcp_path}（{e}）")
@@ -450,6 +451,7 @@ def _install_with_detect() -> None:
         else:
             print("\n⚠️  未能自动检测到 AI 助手。")
             print("   请手动运行：heropen install，或参考 https://heropen.net/docs/")
+            _ensure_tray_after_install()
             return
 
     # Normal case: configs were found
@@ -470,6 +472,30 @@ def _install_with_detect() -> None:
     if not result.get("sse_started") and any("WorkBuddy" in i for i in result.get("configured", [])):
         print("\n   💡 如需自动启动 SSE 服务，请在 Windows 上运行：")
         print("      heropen-mcp --http")
+    _ensure_tray_after_install()
+
+
+def _ensure_tray_after_install() -> None:
+    """安装收尾：把托盘角标拉起来（图形工作台 / 存储模式都挂在它上）。
+
+    角标是 Windows 上的主要界面入口。此前只 pip 装包不拉角标，用户装完
+    看不到任何东西会以为失败；这里补上，且同样遵循「不弹黑窗」「失败不阻断」。
+    """
+    try:
+        from heropen.auto_tray import ensure_tray_running
+    except Exception:
+        return
+    status = ensure_tray_running(verbose=False)
+    if status == "started":
+        print("\n   🖥  已启动托盘角标（系统托盘右下角，右键可设置存储模式）。")
+    elif status == "running":
+        print("\n   🖥  托盘角标已在运行。")
+    elif status == "no_deps":
+        # 依赖未就绪：说明本次装的是不含 tray 的旧版包，给一条明确命令。
+        print("\n   ⚠️  托盘角标依赖未就绪，请补装：pip install \"heropen[tray]\"")
+    elif status == "failed":
+        print("\n   ⚠️  托盘角标未能自动启动；可稍后手动运行：heropen tray")
+    # "skipped"（非 Windows）不打印，保持 macOS/Linux 输出干净。
 
 
 def cmd_first_run() -> None:

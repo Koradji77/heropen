@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "heropen"
-version = "2.0.5"
+version = "2.0.6"
 description = "heropen — AI Agent Long-term Memory System"
 readme = "README.md"
 requires-python = ">=3.10"
@@ -21,8 +21,14 @@ classifiers = [
 dependencies = [
     # Pure-Python MCP runtime; required by `heropen mcp` / `heropen-mcp`.
     # mcp 2.x renamed FastMCP → MCPServer and moved modules — pin <2 until we adapt.
-    # Keep native vector engine (fastembed/onnxruntime) optional for ARM ports.
     "mcp>=1.6,<2",
+    # Windows tray badge. The badge is the entry point to the graphical workbench
+    # and the per-turn save modes, so it must be present after a plain
+    # `pip install heropen` — not hidden behind an extra. Guarded by
+    # platform_system so non-Windows installs (macOS / Linux / ARM) stay lean
+    # and keep building, since pystray/Pillow are only used on Windows.
+    'pystray>=0.19; platform_system == "Windows"',
+    'Pillow>=10; platform_system == "Windows"',
 ]
 
 [project.optional-dependencies]

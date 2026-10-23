@@ -1,5 +1,31 @@
 # heropen 升级指南
 
+## v2.0.5 → v2.0.6
+
+> 说明：本版为**安装体验修复版**，无记忆数据格式变更，无行为破坏。
+
+### 改动摘要
+
+- **Windows 托盘角标改为默认安装**：此前托盘依赖（`pystray` / `Pillow`）放在可选扩展 `heropen[tray]` 里，而官网与安装脚本给的都是裸 `pip install heropen` —— 结果**装完看不到角标**，而角标正是图形工作台与「存储模式」的唯一入口。现在这两个依赖已按 `platform_system == "Windows"` 并入基础依赖，**Windows 上 `pip install heropen` 即带角标**；macOS / Linux 保持精简，不受影响。
+- **安装完自动拉起角标**：新增 `heropen.auto_tray`。装完后自动以 `pythonw` 静默启动角标（不弹控制台黑窗），并沿用既有的开机自启（`HKCU` Run 键）。覆盖两条路径：安装脚本收尾、以及 `.pth` 首次启动钩子。
+- **安装脚本改用 `heropen[tray]`**：作为双保险，老版本基础包不含该依赖时也能装上；并在收尾以隐藏方式拉起角标。
+- **文档数字勘误**：`UPGRADE.md` 中「MCP 工具集合（8 个）与免费额度（6 个 agent）」更正为**（9 个）与（8 个 agent）**，与代码 `FREE_AGENT_LIMIT = 8` 及实际注册的 9 个 MCP 工具一致。
+- **注册表元数据一致性**：`server.json` 顶层 `version` 与 `packages[0].version` 对齐（此前分别为 2.0.5 与 2.0.2，会让 MCP 注册表指向错误的包版本）。
+
+### 升级
+
+```bash
+pip install --upgrade heropen
+```
+
+### 行为兼容
+
+- 已有记忆数据无需迁移。
+- CLI 子命令、MCP 工具集合（9 个）与免费额度（8 个 agent）均不变。
+- 角标若此前已手动装过 `heropen[tray]`，本版无变化；未装过的用户升级后即自动获得。
+
+---
+
 ## v1.9.5 → v1.9.6
 
 > 说明：本版为**元数据 / 分发版**，无记忆数据格式变更，无行为破坏。核心目的是把 heropen 发布到 **MCP 官方注册表**（MCP Registry），让 MCP 客户端与各目录能自动发现它。
@@ -20,7 +46,7 @@ pip install --upgrade heropen
 ### 行为兼容
 
 - 已有记忆数据无需迁移。
-- CLI 子命令、MCP 工具集合（8 个）与免费额度（6 个 agent）均不变。
+- CLI 子命令、MCP 工具集合（9 个）与免费额度（8 个 agent）均不变。
 
 ---
 
