@@ -5,60 +5,62 @@
 
 [![M8ven Verified](https://m8ven.ai/badge/mcp/koradji77-heropen-1juqae?v=64f16afe3a683bd0739d73c9289cf695&variant=verified)](https://m8ven.ai/mcp/koradji77-heropen-1juqae?s=readme)
 
-> **专业解决记不住的问题，越用越懂你。**
+**English** · [简体中文](README.zh-CN.md)
 
-本地优先的 AI 记忆系统。记忆存在你自己的机器上，不上传、不同步、不收走；它自动整理与裁剪，让你越用越准、越用越懂你。
+> **Built to solve forgetting. The more you use it, the better it knows you.**
 
-⭐ **这个工具帮到你了？点个 star 支持一下** → 右上角 [★ Star](https://github.com/Koradji77/heropen)，让更多 agent 用户少走弯路。
+A local-first memory system for AI agents. Memories live on your own machine — never uploaded, never synced, never taken away. heropen organizes and prunes them automatically, so retrieval gets sharper and more personal over time.
 
-## 30 秒看懂
+⭐ **Did this help you? Give us a star** → [★ Star](https://github.com/Koradji77/heropen) in the top right, so more agent users find it.
 
-- **一行装好**：`pip install heropen`，不用 Docker / Postgres / API key。常见客户端可自动写入 MCP 配置；Hermes 等需手动接 `heropen-mcp`。
-- **你的 agent 从此有长期记忆**：跨会话记得人、记得事、记得上下文——不再「聊完就忘」。
-- **数据 100% 留本机**：无遥测、无云端同步、无账单。记忆只在你机器上，只有你拿得走。
+## In 30 seconds
 
-## 安装
+- **One-line install**: `pip install heropen`. No Docker, no Postgres, no API key. Common clients get their MCP config written automatically; Hermes and similar require wiring up `heropen-mcp` by hand.
+- **Your agent gains long-term memory**: it remembers people, events, and context across sessions — no more starting from zero every conversation.
+- **Data stays 100% on your machine**: no telemetry, no cloud sync, no bills. Memories live on your disk, and only you can take them away.
+
+## Install
 
 ```bash
-pip install heropen                 # 核心：MCP + 全文检索，纯 Python 依赖，任意架构（含 ARM64）可装
-pip install 'heropen[embedding]'    # 可选：本地向量（额外引入 onnxruntime / fastembed）
-pip install 'heropen[tray]'         # 可选：Windows 系统托盘角标（常驻存在感 + 工作台）
+pip install heropen                 # Core: MCP + full-text search, pure-Python deps, any architecture (incl. ARM64)
+pip install 'heropen[embedding]'    # Optional: local embeddings (pulls in onnxruntime / fastembed)
+pip install 'heropen[tray]'         # Optional: Windows system tray badge (always-visible presence + workbench)
 ```
 
-### ARM64 说明
+### ARM64 notes
 
-| 平台 | 建议 |
+| Platform | Recommendation |
 |------|------|
-| Apple Silicon (macOS arm64) | 通常 `pip install 'heropen[embedding]'` 即可 |
-| Windows ARM64 | 同上；确认 Python 为 ARM64 构建 |
-| Linux aarch64 | 先装核心；再试 embedding。若 `onnxruntime` 无匹配 wheel，用 `EMBEDDING_ENDPOINT` 自托管向量，或仅用 FTS |
+| Apple Silicon (macOS arm64) | Usually `pip install 'heropen[embedding]'` just works |
+| Windows ARM64 | Same; make sure Python is an ARM64 build |
+| Linux aarch64 | Install core first, then try embedding. If no `onnxruntime` wheel matches, point `EMBEDDING_ENDPOINT` at a self-hosted endpoint or use FTS only |
 
-没有本地向量时，`search` / `recall` 会自动降级为全文检索，**不影响记忆存取**。
+Without local embeddings, `search` / `recall` degrade gracefully to full-text search — **memory storage and retrieval keep working**.
 
-重启你的 agent，完成。首次启动会自动探测常见客户端（Claude Code、Cursor、Windsurf、WorkBuddy 等固定配置路径）并注册记忆工具。**Hermes 等自定义 `mcp_servers` 路径不会自动写入**，请按下方「接入你的 agent」手动配置。
+Restart your agent — done. On first launch heropen probes the known config paths of common clients (Claude Code, Cursor, Windsurf, WorkBuddy, etc.) and registers the memory tools. **Custom `mcp_servers` setups like Hermes are not written automatically**; follow "Connect your agent" below to configure them by hand.
 
-## 30 秒快速上手
+## Quick start in 30 seconds
 
 ```bash
-heropen add "项目使用 FastAPI + SQLAlchemy，测试用 pytest"   # 存一条记忆
-heropen search "项目技术栈"                                   # 搜记忆
-heropen status                                                # 看状态
-heropen diagnose                                              # 诊断问题
+heropen add "Project uses FastAPI + SQLAlchemy, tests run on pytest"   # store a memory
+heropen search "project tech stack"                                    # search memories
+heropen status                                                         # check status
+heropen diagnose                                                       # diagnose problems
 ```
 
-**怎么用才记得住**：请读官方使用方法（SSOT）—— [docs/usage-ssot-zh.md](docs/usage-ssot-zh.md)。  
-要点：事实只进 heropen；热层只留铁律 + 高频 + 指针；每次开场先 `prime` 再 `search`；主打自由标签。
+**How to make it actually stick**: read the official usage guide (single source of truth) — [docs/usage-ssot-zh.md](docs/usage-ssot-zh.md) *(Chinese)*.
+The short version: only facts go into heropen; the hot layer holds iron rules, high-frequency items, and pointers; start every session with `prime`, then `search`; free-form tags are the primary mechanism.
 
-首次 `add` **不会**同步下载约 95MB 的向量模型；写入立即走全文检索。需要本地语义检索时再显式运行：
+The first `add` does **not** download the ~95 MB embedding model — writes go straight to full-text search. When you want local semantic retrieval, run it explicitly:
 
 ```bash
 pip install 'heropen[embedding]'
-heropen embed          # 下载模型并为已有条目生成 embedding
+heropen embed          # download the model and generate embeddings for existing entries
 ```
 
-## 接入你的 agent（MCP）
+## Connect your agent (MCP)
 
-推荐使用独立入口 `heropen-mcp`（stdio）。`heropen mcp` 也可，但 MCP 客户端配置里请用下面这种：
+Use the dedicated `heropen-mcp` entry point (stdio). `heropen mcp` also works, but prefer the form below in MCP client config:
 
 ```json
 {
@@ -68,142 +70,142 @@ heropen embed          # 下载模型并为已有条目生成 embedding
 }
 ```
 
-若 `heropen-mcp` 不在 PATH（例如 `uv tool install` 装到隔离环境），把 `command` 换成该环境里的绝对路径。
+If `heropen-mcp` is not on your PATH (e.g. `uv tool install` into an isolated environment), replace `command` with the absolute path inside that environment.
 
-对 Claude Code / Cursor / Windsurf / WorkBuddy：`heropen auto-setup` 会尝试写入已知配置路径。对 **Hermes** 等自有配置格式，请手动把上面的块加进你的 `mcp_servers`，再重启 agent。
+For Claude Code / Cursor / Windsurf / WorkBuddy: `heropen auto-setup` attempts to write the known config paths. For **Hermes** and other custom config formats, add the block above to your own `mcp_servers` and restart the agent.
 
-重启 agent，它就有了记忆。把一条 bug 修复存一次，跨会话永久记住。
+Restart your agent and it has memory. Store a bug fix once, and it is remembered permanently across sessions.
 
-## 托盘角标（Windows 系统托盘，`heropen[tray]`）
+## Tray badge (Windows system tray, `heropen[tray]`)
 
-装了 `heropen[tray]` 后，运行 `heropen tray` 即可在任务栏右下角（与微信 / 蓝牙 / 输入法同栏）常驻一个 heropen 原生图标——**不遮挡任何窗口内容**。它解决的是「记忆系统没存在感、容易被当垃圾软件卸载」的问题。
+With `heropen[tray]` installed, run `heropen tray` to pin a native heropen icon in the taskbar tray (same area as WeChat / Bluetooth / IME) — **it covers no window content**. It solves the problem of "a memory system with no presence, easily mistaken for junkware and uninstalled."
 
 ```bash
-pip install 'heropen[tray]'   # 仅 Windows 需要
-heropen tray                  # 启动角标（默认开机自启）
+pip install 'heropen[tray]'   # Windows only
+heropen tray                  # start the badge (auto-starts on boot by default)
 ```
 
-右键菜单：
+Right-click menu:
 
-| 菜单项 | 作用 |
+| Item | What it does |
 |---|---|
-| 状态行 | 运行中 · 免费版 / Plus · N 个 agent · 记忆 N 条 |
-| 版本 vX.Y.Z | 点开更新日志 |
-| 存储模式（按 agent 分别设置） | 每个 agent 独立选 大块存储 / 一轮一存 / 自动识别 |
-| 打开工作台 | **左键单击图标同效**，打开真实数据工作台页 |
-| 打开主页 | 打开 heropen.net |
-| 检查更新 | `pip install -U heropen` |
-| 开机自启 | 开关（默认开，写入注册表 Run 键） |
-| 重启 / 退出 | 重启加载最新代码 / 彻底退出 |
+| Status line | Running · Free / Plus · N agents · N memories |
+| Version vX.Y.Z | Opens the changelog |
+| Storage mode (per agent) | Each agent independently picks bulk store / per-turn store / auto-detect |
+| Open workbench | **Left-clicking the icon does the same** — opens the live-data workbench page |
+| Open homepage | Opens heropen.net |
+| Check for updates | `pip install -U heropen` |
+| Start on boot | Toggle (on by default; writes to the registry Run key) |
+| Restart / Quit | Restart to load the latest code / exit completely |
 
-悬停图标显示四段自解释信息：身份（heropen agent 记忆系统）、存储方式、已存入条数、已使用天数。
+Hovering the icon shows four pieces of self-explanatory status: identity (heropen agent memory system), storage mode, entries stored, and days in use.
 
-> **数据真实透明**：角标与工作台读的是你本机 `~/.heropen/*.db` 的真实 `entries` 表，无任何写死假数。读不到库时显示「暂无数据 / 0」，绝不编造数字（`--mock` 仅供演示）。本机只反映本地库——其他机器（如另一台电脑上的诗诗）的记忆不在此体现，属正常（角标按机器各自独立）。
+> **Real data, no fabrication**: the badge and workbench read the actual `entries` table from your local `~/.heropen/*.db`. Nothing is hardcoded. When no database is readable it shows "no data / 0" and never invents numbers (`--mock` is for demos only). It reflects only the local database — memories from another machine (say, another agent on a different computer) do not appear here, which is expected (each machine's badge is independent).
 >
-> **存储模式（已接入内核）**：三种模式决定记忆往 heropen **落档的频率与粒度**——大块存储攒批落、一轮一存句句落、自动识别按「记住 / 决定 / 路径 / 偏好」等触发词智能选，按 agent 分别设置。模式**只管落档，不管检索、不管托盘显示**；写的仍是本机事实库。详见 [`docs/2.0-开场签名与存储内核.md`](docs/2.0-开场签名与存储内核.md)。
+> **Storage modes (wired into the core)**: the three modes control how often and at what granularity memories are committed to heropen — bulk store batches them, per-turn store writes each turn, and auto-detect picks intelligently based on trigger words such as "remember / decided / path / preference". Set per agent. The mode **only governs commits — not retrieval, not what the tray displays**; what gets written is still the local fact store. See [`docs/2.0-开场签名与存储内核.md`](docs/2.0-开场签名与存储内核.md) *(Chinese)*.
 >
-> **界面语言（2.0.4 起）**：托盘右键菜单「Language / 语言」可切换 简体中文 / English / 日本語 / 한국어 / Español / Français / Deutsch / Português / Русский 九种界面语言，菜单、悬停提示、通知与工作台页即时切换，选择持久保存在本机（`~/.heropen/_tray_state.json`）。
+> **Interface languages (since 2.0.4)**: the tray menu's "Language" item switches between 简体中文 / English / 日本語 / 한국어 / Español / Français / Deutsch / Português / Русский. Menus, hover tooltips, notifications, and the workbench page switch instantly, and the choice persists locally (`~/.heropen/_tray_state.json`).
 >
-> **无删除功能**：角标 / 工作台 / CLI 均不含任何删除入口。
+> **No delete feature**: the badge, the workbench, and the CLI expose no deletion entry point whatsoever.
 
-### 开场签名
+### Opening signature
 
-每次对话开场、agent 真正开始办事之前，heropen 自动把一行状态塞进上下文——**不用你敲命令，也不用打开面板**：
+Before every conversation starts — before the agent actually begins working — heropen drops a single status line into context. **You don't type a command, and you don't open a panel**:
 
 ```
-heropen 已就绪 · 本地记忆 187 条 · 距上次对话约 3 小时 · agent=xiaokai
+heropen ready · 187 local memories · ~3 hours since last conversation · agent=xiaokai
 ```
 
-它挂在 MCP `prime_conversation` 返回值的**开头**（CLI `bootstrap` 同样会打印）。
+It is attached to the **beginning** of the MCP `prime_conversation` return value (the CLI `bootstrap` prints it too).
 
-**2.0 的存在感 = 开场签名 + 托盘**：签名管「聊的时候看见」，托盘管「不聊也在任务栏」。
+**Presence in 2.0 = opening signature + tray**: the signature covers "you see it while chatting", the tray covers "it's in your taskbar even when you're not."
 
-## 为什么选 heropen
+## Why heropen
 
-| | heropen（免费） | 其他方案 |
+| | heropen (free) | Other options |
 |---|---|---|
-| 存储 | 不限量 | 通常有限额 |
-| 检索 | 不限次 | 按次计费 |
-| 需要联网 | 否 | 是 |
-| 数据归属 | 你的机器 | 他们的服务器 |
-| 安装 | 一行 `pip install` | 服务器 + 配置 |
+| Storage | Unlimited | Usually capped |
+| Retrieval | Unlimited | Metered per call |
+| Network required | No | Yes |
+| Data ownership | Your machine | Their servers |
+| Install | One `pip install` | Server + configuration |
 
-免费 = 完整核心功能，无功能阉割。
+Free = the complete core feature set, with nothing crippled.
 
-## heropen 占住的位置
+## The position heropen holds
 
-本地优先不是 heropen 独有的卖点——已经有十几个同类项目走 SQLite + MCP。heropen 真正占住、且别人还没占的位置是这三件事：
+Local-first is not unique to heropen — a dozen similar projects run SQLite + MCP. What heropen genuinely holds, and others have not yet taken, is three things:
 
-- **多 agent 的私有域 / 共享域分层**。免费层给 8 个完全私有的 agent（Hermes / WorkBuddy 这类高频常驻 agent 各占一个隔离库），再加一个可选的共享域（`_shared`）让 agent 之间按需交换知识。免费与 Plus 的差别不在数量、而在功能（Plus 提供技能收集与共享等真功能）。大多数竞品只有一个扁平的命名空间。
-- **对话前的时间感知**（v1.8.7 起）。agent 每次开场会自动拿到本地时间、时段词、距上次对话间隔、是否跨睡眠周期——交互侧的时间基准，目前没人做。
-- **零依赖的安装面**。`pip install heropen` 一行即可，不需要 Docker、不需要 Postgres、不需要 Ollama。
+- **Private-domain / shared-domain layering across multiple agents**. The free tier gives you 8 fully private agents (high-frequency always-on agents like Hermes and WorkBuddy each get an isolated database), plus an optional shared domain (`_shared`) for exchanging knowledge between agents on demand. Free and Plus differ in capability, not count (Plus adds real features such as skill collection and sharing). Most competitors offer only a single flat namespace.
+- **Time awareness before a conversation** (since v1.8.7). At the start of each session the agent automatically receives local time, the time-of-day word, the interval since the last conversation, and whether a sleep cycle was crossed — a temporal baseline on the interaction side that nobody else provides.
+- **A zero-dependency install surface**. One line of `pip install heropen`, with no Docker, no Postgres, and no Ollama.
 
-## 隐私承诺
+## Privacy commitment
 
-**数据留在你本机。无遥测。无心跳 ping。** 所有记忆存于本地 SQLite 数据库。向量检索默认使用**本地 embedding 模型**（fastembed，执行 `pip install heropen[embedding]` 即可）——完全离线、零成本。你也可以把 `EMBEDDING_ENDPOINT` 和 `EMBEDDING_API_KEY` 环境变量指向**你自托管的 embedding endpoint**（兼容 OpenAI 的 `/v1/embeddings`），这样永远不会向任何第三方云付费。
+**Your data stays on your machine. No telemetry. No heartbeat ping.** All memories live in a local SQLite database. Vector retrieval uses a **local embedding model by default** (fastembed; `pip install heropen[embedding]`) — fully offline and free. You can also point the `EMBEDDING_ENDPOINT` and `EMBEDDING_API_KEY` environment variables at **your own self-hosted embedding endpoint** (OpenAI-compatible `/v1/embeddings`), so you never pay a third-party cloud.
 
-如果本地 embedding 与自托管 endpoint 都没配置，搜索会自动降级为快速全文（FTS）匹配——依然完全离线、零成本。`pip install heropen` 可**零配置**直接使用；embedding 只是*提升*检索质量，绝不会卡住基础使用。
+If neither local embeddings nor a self-hosted endpoint is configured, search falls back to fast full-text (FTS) matching — still fully offline and free. `pip install heropen` works with **zero configuration**; embeddings only *improve* retrieval quality and never block basic use.
 
-**本地能力不上收（当前）**：当前版本的本地记忆读写、检索与面板能力不会被迁移为必须联网的云端服务；免费层已提供的能力不会在后续版本中被削减。
+**Local capabilities stay local (currently)**: in the current version, local memory read/write, retrieval, and panel capabilities will not be migrated into services that require network access; capabilities already available in the free tier will not be reduced in later versions.
 
-## 为什么是本地
+## Why local
 
-当记忆被做成云端原语，你的对话历史、工作上下文就被存在别人的服务器上。heropen 的选择相反：记忆写在 `~/.heropen/`，一个 agent 一个 SQLite 文件，数据物理不出本机。
+When memory is turned into a cloud primitive, your conversation history and working context end up on someone else's servers. heropen chooses the opposite: memories are written to `~/.heropen/`, one SQLite file per agent, and the data never leaves your machine.
 
-**云能给你的，是方便；本地给你的，是只有你拿得走。**
+**What the cloud gives you is convenience; what local gives you is that only you can take it away.**
 
-## 记忆属于你
+## The memories are yours
 
-记忆存在你本机的 `~/.heropen/` 目录下，每个 agent 一个 SQLite 文件。你可以随时：
-- **备份 / 导出**：`heropen export` 把全部记忆导出为本地 JSON（`heropen import` 可再导入）；
-- **无删除功能**：heropen 不提供任何删除 / 清空入口——记忆本地可控、可导出，但一律不设「删」按钮，避免误删后不可恢复（本机无云端、删了救不回）。若确需清理，直接删除 `~/.heropen/` 下对应 SQLite 文件即可，无需经过我们、也不需要联网。
+Memories live in your local `~/.heropen/` directory, one SQLite file per agent. At any time you can:
+- **Back up / export**: `heropen export` dumps all memories to a local JSON file (`heropen import` reads it back in);
+- **No delete feature**: heropen provides no delete / clear entry point — memories are locally under your control and exportable, but there is deliberately no "delete" button anywhere, to prevent unrecoverable mistakes (there is no cloud copy; deleted means gone). If you really need to clean up, simply remove the corresponding SQLite file under `~/.heropen/` — no need to go through us, and no network required.
 
-更友好的 **Markdown + YAML 导出**（人类可读、无损往返、可再导入）已在路线图中规划。
+A friendlier **Markdown + YAML export** (human-readable, lossless round-trip, re-importable) is on the roadmap.
 
-## 如何选型
+## How to choose
 
-选记忆方案，不只看召回率，看五件事：
+When choosing a memory solution, don't look only at recall — look at five things:
 
-1. **部署门槛**：`pip install` 一行就能跑，还是要 Docker / Postgres / Ollama / API key？
-2. **依赖与成本**：写入路径烧不烧 LLM token？是否零外部依赖？
-3. **可移植性**：记忆能不能导出成可读文件、带走、再导入？
-4. **安全默认值**：监听端口默认绑 loopback 还是 `0.0.0.0`？是否零遥测？
-5. **工程税**：写入纪律与失效机制是否清晰？与 Prompt Cache 是否冲突？跨模型容量上限如何处理？
+1. **Deployment cost**: does one `pip install` get it running, or do you need Docker / Postgres / Ollama / an API key?
+2. **Dependencies and cost**: does the write path burn LLM tokens? Are there zero external dependencies?
+3. **Portability**: can memories be exported as readable files, carried elsewhere, and re-imported?
+4. **Secure defaults**: does the listening port bind to loopback or `0.0.0.0` by default? Is it telemetry-free?
+5. **Engineering tax**: are write discipline and invalidation mechanisms clear? Is it compatible with prompt caching? How are cross-model capacity limits handled?
 
-跑一句 `heropen doctor`，上面五项会逐项给你「通过 / 提示 / 告警」三态自检。
+Run `heropen doctor` and it self-checks all five, giving each a pass / notice / warning verdict.
 
-## 版本与定位
+## Versions and positioning
 
-| 版本 | 定位 | 适合谁 |
+| Version | Positioning | Who it's for |
 |---|---|---|
-| **免费** | 把「记忆」这件事做到好用：本地、私密、越用越懂你 | 任何想给 agent 装长期记忆的人，本机即用 |
-| **Plus** | 记忆好用 + 为工作服务：首功能 = 技能（skill）收集与共享，让记住的东西跨 agent 复用 | 一人公司 / 独立开发者，愿意为持续新功能付费 |
-| **企业版** | 多员工 × 多客户的记忆底座（自托管 + 隔离 + 审计） | 多员工服务多客户的机构 |
+| **Free** | Does the one thing — memory — well: local, private, better the more you use it | Anyone who wants long-term memory for their agent, running on their own machine |
+| **Plus** | Great memory + serving your work: the first feature is skill collection and sharing, so what you've remembered is reused across agents | Solo founders / indie developers willing to pay for continuous new features |
+| **Enterprise** | A memory foundation for many employees × many customers (self-hosted + isolation + audit) | Organizations where many employees serve many customers |
 
-免费版完全开源（Apache-2.0）；Plus / 企业版闭源。
+The free version is fully open source (Apache-2.0); Plus / Enterprise are closed source.
 
-## 合规声明
+## Compliance statement
 
-heropen 是本地优先的记忆与上下文工具，你的数据始终保存在本机、由你完全掌控。本地优先的架构天然满足关于用户数据控制权与透明度的要求，运行过程对你透明、可控。
+heropen is a local-first memory and context tool: your data always stays on your machine, fully under your control. The local-first architecture inherently satisfies requirements around user data control and transparency — its operation is transparent and controllable to you.
 
-## 开源范围
+## Open-source scope
 
-免费版完全开源（Apache-2.0）。商业层（Plus / 企业版）闭源。
+The free version is fully open source (Apache-2.0). The commercial layer (Plus / Enterprise) is closed source.
 
-## 链接 & 支持
+## Links & support
 
-- 官网：[heropen.net](https://heropen.net)
-- 文档：[heropen.net/docs](https://heropen.net/docs/)
-- GitHub：[github.com/Koradji77/heropen](https://github.com/Koradji77/heropen)
+- Homepage: [heropen.net](https://heropen.net)
+- Docs: [heropen.net/docs](https://heropen.net/docs/)
+- GitHub: [github.com/Koradji77/heropen](https://github.com/Koradji77/heropen)
 
-⭐ **喜欢就 star**，这是对我们最大的支持：点 [★ Star](https://github.com/Koradji77/heropen)。
+⭐ **If you like it, star it** — that's the biggest support you can give us: click [★ Star](https://github.com/Koradji77/heropen).
 
-## 路线图
+## Roadmap
 
-- **当前聚焦桌面本地使用**。移动端 / 跨设备同步不在当前范围内——它与「数据不出本机」的默认承诺冲突。若未来做，也必然是用户自有存储 + 端到端加密 + 默认关闭的形式。
-- Markdown + YAML 记忆导出（无损往返）。
-- 更多 agent 私有 / 共享域的产品化能力。
+- **Currently focused on desktop, local use**. Mobile / cross-device sync is out of scope for now — it conflicts with the default promise that "data never leaves your machine". If it is ever built, it will necessarily take the form of user-owned storage + end-to-end encryption + off by default.
+- Markdown + YAML memory export (lossless round-trip).
+- More productized private-domain / shared-domain capabilities across agents.
 
-## 许可证
+## License
 
 Apache-2.0
