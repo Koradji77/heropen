@@ -3,6 +3,8 @@
 
 # heropen
 
+[![M8ven Verified](https://m8ven.ai/badge/mcp/koradji77-heropen-1juqae?v=64f16afe3a683bd0739d73c9289cf695&variant=verified)](https://m8ven.ai/mcp/koradji77-heropen-1juqae?s=readme)
+
 > **专业解决记不住的问题，越用越懂你。**
 
 本地优先的 AI 记忆系统。记忆存在你自己的机器上，不上传、不同步、不收走；它自动整理与裁剪，让你越用越准、越用越懂你。
