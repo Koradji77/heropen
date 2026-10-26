@@ -16,9 +16,40 @@ import shutil
 import sqlite3
 from datetime import date, datetime
 
+def _validate_agent_name(agent: str) -> str:
+    """仅接受单个安全名称，拒绝路径、空白和特殊路径组件。"""
+    if not isinstance(agent, str) or not re.fullmatch(r"[\w.-]+", agent) or agent in (".", ".."):
+        raise ValueError("agent 必须是无路径分隔符的安全名称（字母、数字、下划线、点或连字符）")
+    return agent
+
+
+def get_bound_agent() -> str | None:
+    """空环境值表示未绑定；非空值不修剪、不静默回退。"""
+    agent = os.environ.get("HEROPEN_AGENT", "")
+    if agent == "":
+        return None
+    try:
+        return _validate_agent_name(agent)
+    except ValueError as exc:
+        raise ValueError(f"无效的 HEROPEN_AGENT: {agent!r}；{exc}") from exc
+
+
+def resolve_agent(agent: str | None = None) -> str | None:
+    """实施进程内 Agent 路由绑定；不是操作系统权限隔离。"""
+    bound = get_bound_agent()
+    if bound is not None:
+        if agent is not None and agent != bound:
+            raise ValueError(f"HEROPEN_AGENT 已绑定 {bound!r}，拒绝访问 agent={agent!r}")
+        return bound
+    return agent
+
+
+# 导入时即拒绝无效绑定，避免先创建目录或读取配置。
+get_bound_agent()
+
 # ─── Paths ────────────────────────────────────────────────────
 
-__version__ = "2.0.6"
+__version__ = "2.0.7"
 _HPD = os.environ.get("HERO_PEN_DIR", "")
 if _HPD:
     HERO_PEN_DIR = _HPD
@@ -123,6 +154,9 @@ def _resolve_agent(agent: str) -> str:
     Agents beyond the configured limit are mapped to ``_shared`` only when
     callers explicitly use this helper for overflow routing.
     """
+    agent = resolve_agent(agent)
+    if get_bound_agent() is not None:
+        return agent
     if agent in _free_tier_agents() or agent == OVERFLOW_AGENT:
         return agent
     if agent in AGENTS and not agent.startswith("_"):
@@ -132,7 +166,10 @@ def _resolve_agent(agent: str) -> str:
 
 
 def get_default_agent() -> str:
-    """Read default agent from agent-config.json, fallback to first key in AGENTS."""
+    """优先环境绑定，否则读取配置及原默认值。"""
+    bound = get_bound_agent()
+    if bound is not None:
+        return bound
     _agents = _load_agent_config().get("agents", [])
     if isinstance(_agents, list) and _agents:
         name = _agents[0].get("name") if isinstance(_agents[0], dict) else None
@@ -142,8 +179,10 @@ def get_default_agent() -> str:
 
 
 def db_path(agent: str | None = None) -> str:
+    agent = resolve_agent(agent)
     if agent is None:
         agent = get_default_agent()
+    _validate_agent_name(agent)
     return os.path.join(HERO_PEN_DIR, f"{agent}.db")
 
 
@@ -156,6 +195,7 @@ def ensure_backup_dir() -> None:
 
 def auto_backup(agent: str | None = None) -> str | None:
     """Copy hero_pen.db → ~/.heropen/backups/, keep last BACKUP_KEEP_LOCAL copies."""
+    agent = resolve_agent(agent)
     if agent is None:
         agent = get_default_agent()
     try:
@@ -181,6 +221,7 @@ def auto_backup(agent: str | None = None) -> str | None:
 
 def integrity_check(agent: str | None = None) -> tuple[bool, str]:
     """PRAGMA integrity_check. Returns (ok, message)."""
+    agent = resolve_agent(agent)
     try:
         c = sqlite3.connect(db_path(agent))
         row = c.execute("PRAGMA integrity_check").fetchone()
@@ -194,6 +235,7 @@ def integrity_check(agent: str | None = None) -> tuple[bool, str]:
 
 def db_recovery(agent: str | None = None) -> str | None:
     """Restore from the latest backup. Returns backup path on success."""
+    agent = resolve_agent(agent)
     if agent is None:
         agent = get_default_agent()
     ensure_backup_dir()
@@ -448,6 +490,7 @@ def cosine_similarity(a: list[float], b: list[float]) -> float:
 
 def _connect(agent: str | None = None) -> sqlite3.Connection:
     """Open a SQLite connection with pragmas (no schema creation)."""
+    agent = resolve_agent(agent)
     if agent is None:
         agent = get_default_agent()
     c = sqlite3.connect(db_path(agent))
@@ -456,7 +499,7 @@ def _connect(agent: str | None = None) -> sqlite3.Connection:
     # NORMAL is durable enough with WAL and much safer than OFF on crash/power loss.
     c.execute("PRAGMA synchronous=NORMAL")
     # ATTACH _shared.db for cross-agent search (silent if not exists)
-    if agent != "_shared":
+    if get_bound_agent() is None and agent != "_shared":
         _shared_path = os.path.join(HERO_PEN_DIR, "_shared.db")
         if os.path.exists(_shared_path):
             try:
@@ -472,6 +515,7 @@ def conn(agent: str | None = None) -> sqlite3.Connection:
     This makes read-only CLI commands and the MCP server work immediately
     after install, before the user ever runs ``heropen init``.
     """
+    agent = resolve_agent(agent)
     if agent is None:
         agent = get_default_agent()
     path = db_path(agent)
@@ -623,7 +667,7 @@ def init_db(agent: str | None = None) -> None:
 
     elif version < SCHEMA_VERSION:
         # ── Schema v1→v2: migrate agents from _shared.db to independent dbs ──
-        if version == 1:
+        if version == 1 and get_bound_agent() is None:
             _shared_path = os.path.join(HERO_PEN_DIR, "_shared.db")
             if os.path.exists(_shared_path):
                 try:
@@ -649,6 +693,9 @@ def _migrate_from_shared_v1(agent: str) -> int:
 
     Returns number of entries migrated (0 = nothing to do).
     """
+    agent = resolve_agent(agent)
+    if get_bound_agent() is not None:
+        return 0
     shared_path = os.path.join(HERO_PEN_DIR, "_shared.db")
     agent_path = db_path(agent)
     if not os.path.exists(shared_path):
@@ -729,7 +776,8 @@ def _migrate_from_shared_v1(agent: str) -> int:
 
 def _append_shared(results: list[dict], agent: str) -> list[dict]:
     """Append entries from _shared.db that aren't already in results (by content prefix)."""
-    if not results or agent == "_shared":
+    agent = resolve_agent(agent)
+    if get_bound_agent() is not None or not results or agent == "_shared":
         return results or []
     shared_path = os.path.join(HERO_PEN_DIR, "_shared.db")
     if not os.path.exists(shared_path):
@@ -764,6 +812,7 @@ def add_entry(
     embedding: bytes | None = None,
 ) -> int | None:
     """Insert a memory entry. Auto-generates embedding if not provided."""
+    agent = resolve_agent(agent)
     if agent is None:
         agent = get_default_agent()
     # Prepend time tag to content
@@ -804,7 +853,7 @@ def build_signature(agent: str | None = None) -> str:
     挂在 MCP prime_conversation / CLI bootstrap 的返回值（开头）；
     以后「开场自动召回」做成后，签名贴在那一块开头。
     """
-    agent = agent or get_default_agent()
+    agent = resolve_agent(agent) or get_default_agent()
     total = 0
     last_at = ""
     try:
@@ -840,7 +889,8 @@ def build_signature(agent: str | None = None) -> str:
 #   auto     闲聊倾向 chunk；命中「记住/决定/路径/偏好」→ sentence
 # 边界：模式只管落档频率与粒度，不管检索、不管托盘显示；写的仍是 heropen 事实库（SSOT）。
 TRAY_STATE_FILE = os.path.join(HERO_PEN_DIR, "_tray_state.json")
-STORAGE_MODES = ("chunk", "sentence", "auto")
+STORAGE_MODES = ("auto", "ten_turns", "every_turn")
+LEGACY_STORAGE_MODES = {"chunk": "ten_turns", "sentence": "every_turn"}
 DEFAULT_STORAGE_MODE = "auto"
 # auto 判定触发词（可解释）：命中 → 宁碎勿丢，立即落档。
 # 默认表内置；设 HEROPEN_SENTENCE_TRIGGERS（逗号/竖线分隔）可整表覆盖，不发版即可调
@@ -865,34 +915,47 @@ CHUNK_FLUSH_THRESHOLD = 6  # 缓冲区攒够这么多条就自动落档
 
 
 def get_storage_mode(agent: str | None = None) -> str:
-    """读该 agent 的存储模式（托盘按 agent 分设，落在 _tray_state.json）。"""
-    agent = agent or get_default_agent()
-    env = os.environ.get("HEROPEN_STORAGE_MODE", "").strip().lower()
-    if env in STORAGE_MODES:
-        return env
+    """Read this agent's storage mode; settings are per-agent and never shared.
+
+    Precedence, highest first:
+      1. This agent's explicit entry in _tray_state.json["modes"].
+      2. HEROPEN_STORAGE_MODE, but ONLY as the fallback for agents the user has
+         not configured yet. It must never override an explicit per-agent
+         choice, otherwise one client setting an env var would silently change
+         another agent's write cadence.
+      3. Built-in default (auto).
+    Alegacy top-level "default_mode" is deliberately ignored: it was a global
+    lever that leaked one agent's choice onto every other agent.
+    """
+    agent = resolve_agent(agent) or get_default_agent()
+    explicit = None
     try:
         with open(TRAY_STATE_FILE, encoding="utf-8") as f:
             st = json.load(f)
         m = (st.get("modes") or {}).get(agent)
-        if m in STORAGE_MODES:
-            return m
-        dm = st.get("default_mode")
-        if dm in STORAGE_MODES:
-            return dm
+        if isinstance(m, str) and (m.lower() in STORAGE_MODES
+                                  or m.lower() in LEGACY_STORAGE_MODES):
+            explicit = m.lower()
     except Exception:
-        pass
+        explicit = None
+    if explicit is not None:
+        return LEGACY_STORAGE_MODES.get(explicit, explicit)
+    env = os.environ.get("HEROPEN_STORAGE_MODE", "").strip().lower()
+    if env in STORAGE_MODES or env in LEGACY_STORAGE_MODES:
+        return LEGACY_STORAGE_MODES.get(env, env)
     return DEFAULT_STORAGE_MODE
 
 
 def classify_storage_mode(text: str) -> tuple[str, str]:
-    """auto 的判定：返回 (mode, reason)。命中触发词 → sentence，否则 chunk。"""
+    """Auto analyzes content: important turns save now; ordinary turns batch ten at a time."""
     m = _sentence_trigger_re().search(text or "")
     if m:
-        return "sentence", f"命中「{m.group(0)}」→ 一轮一存（宁碎勿丢）"
-    return "chunk", "闲聊/日常 → 大块存储（攒批落档）"
+        return "every_turn", f"命中「{m.group(0)}」→ 本轮保存"
+    return "ten_turns", "普通对话 → 十轮一存"
 
 
 def _pending_path(agent: str) -> str:
+    agent = resolve_agent(agent)
     return os.path.join(HERO_PEN_DIR, f"_pending_{agent}.json")
 
 
@@ -925,7 +988,7 @@ def flush_pending(agent: str | None = None) -> int:
     返回落库条数。缓冲区落盘存储，进程重启不丢；开场（prime / bootstrap）也会调用，
     保证「攒着的内容」一定有机会落库，不会静默丢失。
     """
-    agent = agent or get_default_agent()
+    agent = resolve_agent(agent) or get_default_agent()
     items = _load_pending(agent)
     if not items:
         return 0
@@ -963,55 +1026,37 @@ def store_memory(
     tags: str = "",
     source: str = "mcp",
 ) -> dict:
-    """写入策略总入口：按存储模式决定落档时机与粒度。
-
-    sentence → 立即一条；chunk → 攒进缓冲区（够长自动落）；auto → 先判定再路由。
-    """
-    agent = agent or get_default_agent()
-    mode = get_storage_mode(agent)
-    reason = ""
-    if mode == "auto":
-        mode, reason = classify_storage_mode(content)
-    if mode == "sentence":
-        eid = add_entry(
-            entry_date=entry_date,
-            content=content[:5000],
-            section=section,
-            tags=tags,
-            agent=agent,
-            source=source,
-        )
-        return {
-            "written": True, "id": eid, "mode": "sentence",
-            "reason": reason or "一轮一存 → 立即落档",
-        }
-    items = _load_pending(agent)
-    items.append({
-        "entry_date": entry_date,
-        "content": content[:5000],
-        "section": section,
-        "tags": tags,
-        "source": source,
-    })
-    _save_pending(agent, items)
-    flushed = 0
-    if len(items) >= CHUNK_FLUSH_THRESHOLD:
-        flushed = flush_pending(agent)
-    return {
-        "written": False, "buffered": len(items), "flushed": flushed, "mode": "chunk",
-        "reason": reason or "大块存储 → 攒批落档",
-    }
+    """Explicit memories are always saved immediately, independent of turn cadence."""
+    agent = resolve_agent(agent) or get_default_agent()
+    eid = add_entry(
+        entry_date=entry_date,
+        content=content[:5000],
+        section=section,
+        tags=tags,
+        agent=agent,
+        source=source,
+    )
+    return {"written": eid is not None, "id": eid, "mode": "explicit",
+            "reason": "显式记忆立即保存"}
 
 
-# ─── Per-turn auto-save hook (2.0.1) ─────────────────────────
-# 「每轮自动存档钩子」：宿主 / 网关在每轮 assistant 回复完成后调用，把本轮
-# 对话提交给存储内核。与「落档频率（存储模式）」两层正交——钩子只负责「每轮提交」，
-# 落库时机仍由 sentence/chunk/auto 决定。
-#
-# 铁律：落库走 store_memory（事实库 SSOT），**严禁** session_checkpoint。
-# 断点表是崩溃恢复基础设施，每轮调会每轮爆一条、且语义 ≠ 记忆事实。
-# source 固定 auto_turn，便于与显式 add 区分、必要时整体回滚（heropen 只标不删）。
+# 宿主须提交每个完整话轮；接收、待存和写入关联由 turn_storage 在事务内处理。
+# conversation_id 仅隔离批次，不隔离读取权限；同一轮重试必须复用稳定 turn_id。
+# 新引擎不读取、迁移或删除旧 JSON；更早的 _pending_* / flush_pending 保留处理遗留数据。
+# 显式记忆和恢复断点不受话轮存储频率影响。
 AUTO_TURN_SOURCE = "auto_turn"
+
+
+def flush_turn_buffer(agent: str | None = None, conversation_id: str = "") -> dict:
+    """显式保存指定会话的尾批；空 ID 仅刷新默认会话，不刷新全部会话。
+
+    conversation_id 是批次隔离，不是读权限隔离；返回新引擎的计数与状态。
+    不触碰旧 JSON 缓冲。
+    """
+    agent = resolve_agent(agent)
+    from . import turn_storage
+
+    return turn_storage.flush(agent=agent, conversation_id=conversation_id)
 
 
 def auto_save_turn(
@@ -1021,71 +1066,30 @@ def auto_save_turn(
     section: str = "",
     tags: str = "",
     entry_date: str = "",
+    conversation_id: str = "",
+    turn_id: str = "",
 ) -> dict:
-    """每轮自动存档钩子（2.0.1）。
+    """将完整话轮原样委托事务引擎，按设置立即写入或持久化待存。
 
-    宿主 / 网关在每轮 assistant 回复完成后调用；把本轮对话提交给存储内核，
-    落库时机由该 agent 的存储模式决定（sentence 立即落 / chunk 攒批 / auto 智能选），
-    与「是否每轮提交」两层正交。
-
-    Args:
-        agent: 哪个 agent 的记忆（默认自动）。
-        content: 本轮 assistant 回复原文（必填，空则跳过）。
-        user_content: 可选，本轮用户输入原文；提供后连用户发言一并存档，还原完整一轮。
-        section: 分类（默认「对话记录」）。
-        tags: 额外标签（auto_turn 会自动加上）。
-        entry_date: 日期（默认今天）。
-
-    Returns:
-        {"saved", "buffered", "flushed", "parts", "source", "skipped"?}
-        parts 为逐条明细数组（2.0.3 起为数组，2.0.1/2.0.2 曾为计数）：
-        [{"kind": "user"|"assistant", "written": bool, "id"?: int,
-          "buffered"?: int, "flushed"?: int, "mode": "sentence"|"chunk", "reason": str}, ...]
-        调用方可遍历 parts 查每条走了哪个模式及原因。
+    conversation_id 仅用于批次隔离，不提供读权限隔离。重试必须保持
+    conversation_id 和 turn_id 稳定；省略 turn_id 会生成 ID，须复用返回值重试。
+    saved / parts 为本次新建条目数，flushed 为本次写入关联的轮数；
+    received_turns / pending_turns 为当前会话累计接收 / 待存轮数，
+    buffered 是当前轮是否仍待存的布尔值。
     """
-    from datetime import date
+    agent = resolve_agent(agent)
+    from . import turn_storage
 
-    agent = agent or get_default_agent()
-    ed = entry_date if entry_date else date.today().isoformat()
-    parts: list[dict] = []
-
-    # 1) 先存用户本轮输入（可选）—— 完整还原一轮对话
-    if user_content and user_content.strip():
-        r = store_memory(
-            agent=agent,
-            entry_date=ed,
-            content=user_content.strip()[:5000],
-            section="用户输入",
-            tags=(tags + ",auto_turn,user").strip(","),
-            source=AUTO_TURN_SOURCE,
-        )
-        parts.append({"kind": "user", **r})
-
-    # 2) 存 assistant 本轮回复（主体）
-    if content and content.strip():
-        r = store_memory(
-            agent=agent,
-            entry_date=ed,
-            content=content.strip()[:5000],
-            section=section or "对话记录",
-            tags=(tags + ",auto_turn").strip(","),
-            source=AUTO_TURN_SOURCE,
-        )
-        parts.append({"kind": "assistant", **r})
-
-    if not parts:
-        return {"saved": 0, "skipped": True, "reason": "empty_turn", "source": AUTO_TURN_SOURCE}
-
-    saved = sum(1 for r in parts if r.get("written"))
-    buffered = sum(r.get("buffered", 0) for r in parts)
-    flushed = sum(r.get("flushed", 0) for r in parts)
-    return {
-        "saved": saved,
-        "buffered": buffered,
-        "flushed": flushed,
-        "parts": parts,  # 2.0.3: 逐条明细数组（kind + mode/reason），供网关遍历
-        "source": AUTO_TURN_SOURCE,
-    }
+    return turn_storage.save_turn(
+        agent=agent,
+        content=content,
+        user_content=user_content,
+        section=section,
+        tags=tags,
+        entry_date=entry_date,
+        conversation_id=conversation_id,
+        turn_id=turn_id,
+    )
 
 
 # ─── Session Checkpoint & Recovery ──────────────────────────
@@ -1155,6 +1159,7 @@ def session_recover(agent, limit=1):
 
 def update_entry(entry_id: int, agent: str | None = None, **fields) -> dict | None:
     """Update a memory entry. Only non-None fields are changed."""
+    agent = resolve_agent(agent)
     if agent is None:
         agent = get_default_agent()
     ALLOWED = {"section", "content", "tags", "entry_date", "source"}
@@ -1255,6 +1260,7 @@ def _store_entities_and_relations(c: sqlite3.Connection, entities: list) -> None
 
 
 def search_graph(query: str, limit: int = 5, agent: str | None = None) -> list | None:
+    agent = resolve_agent(agent)
     entities = extract_entities(query)
     if not entities:
         return None
@@ -1296,6 +1302,7 @@ def search_graph(query: str, limit: int = 5, agent: str | None = None) -> list |
 
 def search_vector(query: str, limit: int = 5, agent: str | None = None) -> list | None:
     """Vector semantic search. Returns None (triggers FTS fallback) when no match or all scores < 0.5."""
+    agent = resolve_agent(agent)
     c = conn(agent or get_default_agent())
     query_emb = get_embedding(query)
     if not query_emb:
@@ -1332,6 +1339,7 @@ def search_vector(query: str, limit: int = 5, agent: str | None = None) -> list 
 
 
 def search_fts(keywords: list[str], limit: int = 5, agent: str | None = None) -> list:
+    agent = resolve_agent(agent)
     c = conn(agent or get_default_agent())
     params = []
     conditions = []
@@ -1354,6 +1362,7 @@ def search_fts(keywords: list[str], limit: int = 5, agent: str | None = None) ->
 
 
 def search_by_date(date_str: str, limit: int = 10, agent: str | None = None) -> list:
+    agent = resolve_agent(agent)
     c = conn(agent or get_default_agent())
     if agent:
         rows = c.execute(
@@ -1370,6 +1379,7 @@ def search_by_date(date_str: str, limit: int = 10, agent: str | None = None) -> 
 
 
 def search_by_tag(tag: str, limit: int = 10, agent: str | None = None) -> list:
+    agent = resolve_agent(agent)
     c = conn(agent or get_default_agent())
     if agent:
         rows = c.execute(
@@ -1386,6 +1396,7 @@ def search_by_tag(tag: str, limit: int = 10, agent: str | None = None) -> list:
 
 
 def search_recent(limit: int = 10, agent: str | None = None) -> list:
+    agent = resolve_agent(agent)
     c = conn(agent or get_default_agent())
     if agent:
         rows = c.execute(
@@ -1476,6 +1487,9 @@ def search_shared(agent: str, limit: int = 10) -> list:
     Used by CLI recall/search commands to include team shared knowledge.
     Returns list of dicts with _source='shared' marker.
     """
+    agent = resolve_agent(agent)
+    if get_bound_agent() is not None:
+        return []
     shared_path = os.path.join(HERO_PEN_DIR, "_shared.db")
     if not os.path.exists(shared_path) or agent == "_shared":
         return []
@@ -1547,6 +1561,7 @@ def flag_memory_hygiene(results: list, agent: str | None = None) -> list:
     Returns:
         带 `hygiene_flags` 字段的结果列表（原字段保持不变）。
     """
+    resolve_agent(agent)
     try:
         from datetime import datetime
         _now = datetime.now()
@@ -1607,6 +1622,7 @@ def resolve_conflicts(results: list, agent: str | None = None) -> dict:
           "suppressed_map": { int: str }   # id -> 裁决理由，供上层标注
         }
     """
+    resolve_agent(agent)
     import difflib
     from datetime import datetime
 

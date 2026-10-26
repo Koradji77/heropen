@@ -11,9 +11,27 @@ import mimetypes
 from datetime import date
 from http.server import HTTPServer, SimpleHTTPRequestHandler
 from urllib.parse import urlparse, parse_qs
+from pathlib import Path
 
-from heropen.core import AGENTS, conn, get_agent_limit
+from heropen.core import AGENTS, HERO_PEN_DIR, conn, get_agent_limit
 from heropen import __version__ as HP_VERSION
+from heropen.mac_workbench import dashboard, set_mode
+
+# 后台摄取：延迟导入，避免缺少可选依赖时阻断面板启动。
+try:
+    from heropen.turn_ingest_scheduler import (
+        read_result as _ingest_read_result,
+        run_once as _ingest_run_once,
+        running as _ingest_running,
+        set_settings as _ingest_set_settings,
+        settings as _ingest_settings,
+        start_auto as _ingest_start_auto,
+        stop_auto as _ingest_stop_auto,
+    )
+except Exception:  # noqa: BLE001
+    _ingest_read_result = _ingest_run_once = None
+    _ingest_running = _ingest_settings = None
+    _ingest_set_settings = _ingest_start_auto = _ingest_stop_auto = None
 
 SERVER_DIR = os.path.dirname(os.path.abspath(__file__))
 HOST = "127.0.0.1"
@@ -67,6 +85,18 @@ heropen_mcp_config = {
     "command": "heropen-mcp",
     "args": [],
 }
+
+
+def _visible_agents() -> list[str]:
+    """Include existing local databases even without agent-config.json."""
+    configured = list(AGENTS.keys())
+    data_dir = Path(HERO_PEN_DIR)
+    if data_dir.is_dir():
+        for db in sorted(data_dir.glob("*.db")):
+            name = db.stem
+            if name not in configured:
+                configured.append(name)
+    return configured
 
 
 def _scan_assistants() -> list[dict]:
@@ -132,10 +162,16 @@ class ViewerHandler(SimpleHTTPRequestHandler):
         self.send_response(status)
         self.send_header("Content-Type", "application/json; charset=utf-8")
         self.send_header("Content-Length", str(len(body)))
-        self.send_header("Access-Control-Allow-Origin", "*")
+        self.send_header("Access-Control-Allow-Origin", f"http://{HOST}:{PORT}" if os.environ.get("HEROPEN_DESKTOP") == "1" else "*")
         self.send_header("Cache-Control", "no-cache")
         self.end_headers()
         self.wfile.write(body)
+
+    def _same_origin(self) -> bool:
+        origin = self.headers.get("Origin", "")
+        referer = self.headers.get("Referer", "")
+        local_url = f"http://{HOST}:{PORT}/"
+        return origin == local_url[:-1] or referer.startswith(local_url)
 
     def _agent_stats(self, agent_name: str) -> dict:
         """Get stats and today's count for one agent."""
@@ -160,18 +196,18 @@ class ViewerHandler(SimpleHTTPRequestHandler):
 
     def _handle_health(self):
         agents_stats = {}
-        for agent_name in list(AGENTS.keys()):
+        for agent_name in _visible_agents():
             agents_stats[agent_name] = self._agent_stats(agent_name)
         return self._send_json({
             "status": "ok",
             "version": HP_VERSION,
             "agents": agents_stats,
             "free_limit": get_agent_limit(),
-            "setup_done": bool(AGENTS),
+            "setup_done": bool(agents_stats),
         })
 
     def _handle_memory(self, agent_name: str, query: str):
-        if agent_name not in AGENTS:
+        if agent_name not in _visible_agents():
             return self._send_json({"error": "agent not found"}, 404)
 
         params = parse_qs(query)
@@ -211,10 +247,22 @@ class ViewerHandler(SimpleHTTPRequestHandler):
         except Exception as e:
             return self._send_json({"error": str(e)}, 500)
 
+    def _handle_ingest_status(self):
+        """Read-only view of the auto-ingest scheduler and its last run."""
+        if _ingest_settings is None:
+            return self._send_json({"available": False,
+                                    "note": "摄取模块不可用"})
+        return self._send_json({
+            "available": True,
+            "settings": _ingest_settings(),
+            "running": _ingest_running(),
+            "last": _ingest_read_result(),
+        })
+
     def _handle_setup_status(self):
         return self._send_json({
-            "configured": bool(AGENTS),
-            "agent_count": len(AGENTS),
+            "configured": bool(_visible_agents()),
+            "agent_count": len(_visible_agents()),
             "free_limit": get_agent_limit(),
         })
 
@@ -247,9 +295,15 @@ class ViewerHandler(SimpleHTTPRequestHandler):
         if path == "/api/health":
             return self._handle_health()
 
+        if path == "/api/workbench":
+            return self._send_json(dashboard())
+
         if path.startswith("/api/memory/"):
             agent_name = path.split("/api/memory/")[1]
             return self._handle_memory(agent_name, parsed.query)
+
+        if path == "/api/ingest/status":
+            return self._handle_ingest_status()
 
         if path == "/api/setup/status":
             return self._handle_setup_status()
@@ -259,9 +313,13 @@ class ViewerHandler(SimpleHTTPRequestHandler):
 
         # ── Static files ──
         if path == "/" or path == "":
-            path = "/viewer.html"
+            path = "/mac_workbench.html" if os.environ.get("HEROPEN_DESKTOP") == "1" else "/viewer.html"
 
-        file_path = os.path.join(SERVER_DIR, path.lstrip("/"))
+        if os.environ.get("HEROPEN_DESKTOP") == "1" and path not in ("/mac_workbench.html", "/viewer.html"):
+            return self._send_json({"error": "not found"}, 404)
+        file_path = os.path.realpath(os.path.join(SERVER_DIR, path.lstrip("/")))
+        if os.path.commonpath((SERVER_DIR, file_path)) != SERVER_DIR:
+            return self._send_json({"error": "not found"}, 404)
         if os.path.isfile(file_path):
             content_type, _ = mimetypes.guess_type(file_path)
             if content_type is None:
@@ -291,14 +349,52 @@ class ViewerHandler(SimpleHTTPRequestHandler):
             except json.JSONDecodeError:
                 return self._send_json({"error": "invalid JSON"}, 400)
 
+        if path == "/api/ingest/run" and os.environ.get("HEROPEN_DESKTOP") == "1":
+            if not self._same_origin():
+                return self._send_json({"error": "forbidden origin"}, 403)
+            apply = body.get("apply")
+            return self._send_json({"ok": True, "result": _ingest_run_once(
+                apply=apply if isinstance(apply, bool) else None)})
+
+        if path == "/api/ingest/settings" and os.environ.get("HEROPEN_DESKTOP") == "1":
+            if not self._same_origin():
+                return self._send_json({"error": "forbidden origin"}, 403)
+            kwargs = {}
+            for key in ("enabled", "apply"):
+                if isinstance(body.get(key), bool):
+                    kwargs[key] = body[key]
+            if "interval_seconds" in body:
+                kwargs["interval_seconds"] = body["interval_seconds"]
+            try:
+                updated = _ingest_set_settings(**kwargs)
+            except ValueError as exc:
+                return self._send_json({"error": str(exc)}, 400)
+            # Apply the new state to the timer immediately.
+            if updated["enabled"]:
+                _ingest_start_auto()
+            else:
+                _ingest_stop_auto()
+            return self._send_json({"ok": True, "settings": updated,
+                                    "running": _ingest_running()})
+
+        if path == "/api/workbench/mode" and os.environ.get("HEROPEN_DESKTOP") == "1":
+            if not self._same_origin():
+                return self._send_json({"error": "forbidden origin"}, 403)
+            agent, mode = body.get("agent"), body.get("mode")
+            if not isinstance(agent, str) or not isinstance(mode, str) or not set_mode(agent, mode):
+                return self._send_json({"error": "invalid agent or mode"}, 400)
+            return self._send_json({"ok": True, "agent": agent, "mode": mode})
+
         if path == "/api/setup/configure":
+            if os.environ.get("HEROPEN_DESKTOP") == "1":
+                return self._send_json({"error": "desktop configuration is disabled"}, 403)
             return self._handle_setup_configure(body)
 
         return self._send_json({"error": "not found"}, 404)
 
     def do_OPTIONS(self):
         self.send_response(204)
-        self.send_header("Access-Control-Allow-Origin", "*")
+        self.send_header("Access-Control-Allow-Origin", f"http://{HOST}:{PORT}" if os.environ.get("HEROPEN_DESKTOP") == "1" else "*")
         self.send_header("Access-Control-Allow-Methods", "GET, POST, OPTIONS")
         self.send_header("Access-Control-Allow-Headers", "Content-Type")
         self.end_headers()
@@ -315,6 +411,20 @@ def main():
             f"如需远程访问请自行通过 SSH 隧道转发，不要直接改 HOST。"
         )
     httpd = HTTPServer((HOST, PORT), ViewerHandler)
+    # 后台定时摄取：让「主动读取会话记录」不必手动调用。默认关闭，
+    # 且默认只试算不写入；任何异常都被限制在定时线程内，不影响面板。
+    try:
+        from heropen.turn_ingest_scheduler import settings as _ingest_settings
+        from heropen.turn_ingest_scheduler import start_auto as _start_ingest
+        if _start_ingest():
+            _cfg = _ingest_settings()
+            _mode = "写入" if _cfg["apply"] else "仅试算"
+            print(f"  [摄取] 已启用后台定时读取（每 {_cfg['interval_seconds']} 秒 · {_mode}）",
+                  flush=True)
+        else:
+            print("  [摄取] 后台定时读取未启用（可在工作台开启）", flush=True)
+    except Exception as exc:  # noqa: BLE001 - 摄取故障不得阻断面板启动
+        print(f"  [摄取] 未能启动后台定时读取：{exc}", flush=True)
     print(f"  heropen Web Viewer", flush=True)
     print(f"  http://127.0.0.1:{PORT}", flush=True)
     print(f"  API: http://127.0.0.1:{PORT}/api/health", flush=True)

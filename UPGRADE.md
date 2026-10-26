@@ -1,5 +1,31 @@
 # heropen 升级指南
 
+## v2.0.6 → v2.0.7
+
+> 说明：本版为**能力回流版**——把 macOS 桌面版已验证的「话轮摄取」能力并入通用版，修复「宿主未接钩子时自动存档空转」的缺口。无记忆数据格式变更，无行为破坏。
+
+### 改动摘要
+
+- **新增话轮摄取能力（回流自 macOS 版，性质为修补缺口）**：此前 heropen 是被动 MCP server，依赖宿主每轮调用 `auto_save_turn`；**当宿主未接钩子时整条自动累计链路空转（接收数恒为 0）**。本版合入 `turn_ingest.py` / `turn_storage.py` / `turn_ingest_scheduler.py`，不依赖宿主配合，直接读取客户端已落盘的会话记录补交存储。三个模块经实测为平台中立（0 处 macOS 专属 API）。
+- **MCP 工具 9 → 12**：新增 `ingest_local_turns`（主动读本机会话记录补交存储）、`turn_storage_status`（只读查询事务式话轮存储状态）、`flush_turns`（显式保存指定会话的待存尾批）。
+- **新增连接状态判定模块**：`connection_status.py`（回流），其中 macOS 专属的 `proc_pidinfo` / `proc_pidpath` 已补 **Windows 分支**（kernel32 Toolhelp 快照 / `QueryFullProcessImageNameW`，纯 ctypes，无新依赖）。
+- **工作台与内核差异合并**：`viewer_server.py`（+110 行）、`core.py`（+16 行）经三方合并（base=2.0.5）合入，冲突仅版本号一处，已保留主线值。
+- CLI 子命令与免费额度（8 个 agent）不变。
+
+### 升级
+
+```bash
+pip install --upgrade heropen
+```
+
+### 行为兼容
+
+- 已有记忆数据无需迁移。
+- MCP 工具集合由 9 个增至 **12 个**（只增不减，旧工具签名不变）；免费额度（8 个 agent）不变。
+- 宿主已接 `auto_save_turn` 钩子的用户无感知；未接钩子的用户升级后「自动记住」开始真正生效。
+
+---
+
 ## v2.0.5 → v2.0.6
 
 > 说明：本版为**安装体验修复版**，无记忆数据格式变更，无行为破坏。

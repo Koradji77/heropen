@@ -16,11 +16,11 @@ import sys
 import os
 from pathlib import Path
 
-# Ensure ~/.heropen exists
-os.makedirs(os.path.expanduser("~/.heropen"), exist_ok=True)
-
 from heropen.core import (
     AGENTS,
+    HERO_PEN_DIR,
+    get_bound_agent,
+    resolve_agent,
     add_entry,
     build_signature,
     conn,
@@ -35,6 +35,8 @@ from heropen.core import (
     resolve_conflicts,
 )
 from heropen.core import auto_save_turn as _core_auto_save_turn
+from heropen.core import flush_turn_buffer as _core_flush_turn_buffer
+from heropen import turn_storage
 from heropen.core import session_checkpoint as _core_checkpoint
 from heropen.core import session_recover as _core_recover
 from heropen import __version__
@@ -43,11 +45,144 @@ from heropen import __version__
 _STARTUP_VERSION = __version__
 
 # Marker file path for pending setup
-_MARKER_PATH = Path.home() / ".heropen" / ".pending_setup"
+_MARKER_PATH = Path(HERO_PEN_DIR) / ".pending_setup"
+
+
+def _install_call_observer(mcp) -> None:
+    """只包装协议入口，不把启动、工具枚举或本地探测当作调用验证。
+
+    握手单独记录为「已连接」（不声称用过工具）；tools/call 才记为最近调用。
+    """
+    try:
+        import hashlib
+        from functools import wraps
+        from mcp.types import CallToolRequest, ListToolsRequest
+        from heropen import connection_status
+
+        lowlevel = mcp._mcp_server
+        original = lowlevel.request_handlers[CallToolRequest]
+        if getattr(original, "_heropen_call_observer", False):
+            return
+        digest = hashlib.sha256(
+            Path(__file__).read_bytes() + Path(connection_status.__file__).read_bytes()
+        ).hexdigest()[:16]
+        build_marker = f"{__version__}:{connection_status.BUILD_MARKER}:{digest}"
+
+        def _client_name():
+            # request_context.session 是当前真实会话；client_params 只在
+            # 握手完成后才有值，因此能证明这是一个已建立的真实连接。
+            session = lowlevel.request_context.session
+            info = getattr(session.client_params, "clientInfo", None)
+            return getattr(info, "name", None)
+
+        original_list = lowlevel.request_handlers.get(ListToolsRequest)
+        if original_list is not None and not getattr(original_list, "_heropen_connect_observer", False):
+            @wraps(original_list)
+            async def observed_list(request):
+                try:
+                    # 客户端握手后枚举工具：记为「已连接」，但不代表用过工具。
+                    connection_status.record_connect(
+                        client_name=_client_name(),
+                        bound_agent=get_bound_agent(),
+                        data_directory=HERO_PEN_DIR,
+                        build_marker=build_marker,
+                    )
+                except Exception:
+                    pass
+                return await original_list(request)
+
+            observed_list._heropen_connect_observer = True
+            lowlevel.request_handlers[ListToolsRequest] = observed_list
+
+        @wraps(original)
+        async def observed_call(request):
+            try:
+                connection_status.record_call(
+                    client_name=_client_name(),
+                    bound_agent=get_bound_agent(),
+                    data_directory=HERO_PEN_DIR,
+                    tool=request.params.name,
+                    build_marker=build_marker,
+                )
+            except Exception:
+                # 观测失败不能改变工具结果或吞掉工具自身的异常。
+                pass
+            return await original(request)
+
+        observed_call._heropen_call_observer = True
+        lowlevel.request_handlers[CallToolRequest] = observed_call
+    except Exception:
+        # SDK 缺少入口或元数据不可读时不阻断服务，也绝不生成假验证。
+        pass
+
+
+def _mcp_registered(hero_pen_dir: str) -> bool | None:
+    """Whether a known client config declares this heropen server.
+
+    Returns True when found, False when every known location was readable and
+    none declared heropen, and None when the answer cannot be determined (for
+    example an existing Hermes config while PyYAML is unavailable). Reporting
+    None as False would produce a false "not configured" warning, so callers
+    must treat None as unknown. Only the presence of a "heropen" entry is read
+    here; no secret values are exposed.
+    """
+    home = Path.home()
+    if (Path(hero_pen_dir) / "agent-config.json").exists():
+        return True
+    undetermined = False
+    json_candidates = [
+        home / ".workbuddy/mcp.json",
+        home / ".zcode/cli/config.json",
+        home / ".agents/mcp.json",
+    ]
+    for path in json_candidates:
+        try:
+            text = path.read_text(encoding="utf-8")
+        except FileNotFoundError:
+            continue
+        except OSError:
+            undetermined = True
+            continue
+        try:
+            data = json.loads(text)
+        except ValueError:
+            undetermined = True
+            continue
+        if not isinstance(data, dict):
+            undetermined = True
+            continue
+        for container in (data.get("mcpServers"), (data.get("mcp") or {}).get("servers")):
+            if isinstance(container, dict) and "heropen" in container:
+                return True
+    hermes_config = home / ".hermes/config.yaml"
+    if hermes_config.exists():
+        try:
+            import yaml
+        except Exception:
+            # Config exists but cannot be parsed without PyYAML: unknown.
+            undetermined = True
+        else:
+            try:
+                hermes = yaml.safe_load(hermes_config.read_text(encoding="utf-8"))
+            except OSError:
+                undetermined = True
+            except Exception:
+                undetermined = True
+            else:
+                if isinstance(hermes, dict) and "heropen" in (hermes.get("mcp_servers") or {}):
+                    return True
+    return None if undetermined else False
 
 
 def _check_pending_setup(clear: bool = False) -> dict:
-    """Check or clear the pending setup marker file."""
+    """Report first-run setup state, based on evidence that setup actually ran.
+
+    The .pending_setup marker alone is not proof of a fresh install: it is
+    written once at install time and can outlive a completed setup on an
+    in-place upgrade. A missing marker alongside a completed setup sentinel
+    (.auto_setup_done) or existing memory databases means this is NOT a first
+    run, so we must not tell an active user "you just installed heropen".
+    """
     if clear and _MARKER_PATH.exists():
         _MARKER_PATH.unlink()
         return {"pending_setup": False}
@@ -57,6 +192,12 @@ def _check_pending_setup(clear: bool = False) -> dict:
             data = json.loads(_MARKER_PATH.read_text())
         except (json.JSONDecodeError, OSError):
             data = {}
+        # Evidence that the system has already been used on this machine.
+        setup_done = (Path(HERO_PEN_DIR) / ".auto_setup_done").exists()
+        used_before = any(Path(HERO_PEN_DIR).glob("*.db"))
+        if setup_done or used_before:
+            return {"pending_setup": False, "installed_at": data.get("installed_at", ""),
+                    "version": data.get("version", ""), "setup_completed": True}
         return {
             "pending_setup": True,
             "installed_at": data.get("installed_at", ""),
@@ -137,7 +278,7 @@ def build_conversation_primer(agent: str | None = None) -> str:
     from datetime import datetime, date
 
     now = datetime.now()  # 本机本地时区，禁止 server UTC 裸跑
-    agent = agent or get_default_agent()
+    agent = resolve_agent(agent) or get_default_agent()
 
     last_at = ""
     today_count = 0
@@ -235,11 +376,13 @@ def create_mcp_server():
         "（典型故障：深夜误说「早上好」、把用户凌晨说的「明天」机械当成字面次日）。\n"
         "替代路径：若你在开场调用了 search_memory（其返回已内置 time_context），同样满足本约定。\n"
         "\n"
-        "💾 每轮自动存档（heropen 2.0.1）：在【每一次】你完成回复后，调用 auto_save_turn 工具，"
-        "把你的回复原文作为 content 传入（若方便也把本轮用户输入作为 user_content）。"
-        "这是「轮轮不落」的自动存档安全网，与你的主动 add_memory 互不影响；落库频率由存储模式决定"
-        "（sentence 立即落 / chunk 攒批 / auto 智能选）。注意：host/网关若已自动调用本工具，则无需你重复调用——"
-        "heropen 不做物理删除，少量重复无害，搜索结果会带卫生标记。"
+        "💾 每轮存档：宿主应在每次回复后调用 auto_save_turn 一次，并提供本轮回复 content 及用户输入 user_content。"
+        "自动模式按重要内容或累计信息量触发写入，最迟累计十轮写入；十轮一存累计十轮；步步为营每轮写入。"
+        "每轮先在数据库中事务式接收，待存轮跨进程重启保留；不读取、迁移或删除旧 JSON 缓冲。"
+        "conversation_id 是批次隔离，不是读权限隔离；同一轮重试必须保持 conversation_id 和 turn_id 稳定。"
+        "省略 turn_id 会生成 ID，重试须复用返回的 turn_id；若宿主已自动调用，请勿重复调用。"
+        "可用 turn_storage_status 只读查看状态，结束时用 flush_turns 显式保存指定会话尾批；空会话 ID 只刷新默认会话。"
+        "显式 add_memory 立即保存，不受频率设置影响。"
     )
     mcp = FastMCP("heropen", instructions=_PRIMING_INSTRUCTIONS)
 
@@ -251,8 +394,9 @@ def create_mcp_server():
     except Exception:  # cosmetic only — never block startup over it
         pass
 
-    # ── Startup self-heal: check all agent databases ──
-    _all_agents = list(AGENTS.keys())
+    # 绑定时只检查自身，不扫描或修复其他 Agent。
+    _bound_agent = get_bound_agent()
+    _all_agents = [_bound_agent] if _bound_agent is not None else list(AGENTS.keys())
     _recovered = 0
     for _agent in _all_agents:
         _r = startup_self_heal(_agent)
@@ -282,6 +426,7 @@ def create_mcp_server():
             date_from: Only return entries on or after this date (YYYY-MM-DD).
             date_to: Only return entries on or before this date (YYYY-MM-DD).
         """
+        agent = resolve_agent(agent)
         limit = min(limit, 20)
         results = search_vector(query, limit, agent)
         method = "vector"
@@ -337,7 +482,10 @@ def create_mcp_server():
         # Append entries from _shared.db for cross-agent knowledge
         try:
             from heropen.core import search_shared
-            shared_results = search_shared(agent or get_default_agent(), limit)
+            shared_results = (
+                search_shared(agent or get_default_agent(), limit)
+                if get_bound_agent() is None else []
+            )
             existing_contents = {r.get("content", "")[:80] for r in results if r.get("content")}
             for sr in shared_results:
                 if sr.get("content", "")[:80] not in existing_contents:
@@ -386,8 +534,9 @@ def create_mcp_server():
         Args:
             agent: Which agent's context to prime (default: auto).
         """
-        agent = agent or get_default_agent()
-        # 开场先把上一段对话攒下的（chunk 缓冲）落库，保证不静默丢失
+        agent = resolve_agent(agent) or get_default_agent()
+        # 仅处理旧版本 chunk 遗留缓冲；新引擎待存轮跨开场保留，
+        # 由存储策略或显式 flush_turns 写入，开场不重置计数。
         try:
             flush_pending(agent)
         except Exception:
@@ -444,27 +593,39 @@ def create_mcp_server():
         user_content: str = "",
         section: str = "",
         tags: str = "",
+        conversation_id: str = "",
+        turn_id: str = "",
     ) -> str:
-        """每轮自动存档钩子（heropen 2.0.1）。宿主 / 网关在每轮 assistant 回复完成后调用本工具，
-        把本轮对话提交给 heropen 存储内核；落库时机仍由该 agent 的存储模式决定
-        （sentence 立即落 / chunk 攒批落 / auto 智能选），与「是否每轮提交」两层正交。
-
-        这是 heropen 的「轮轮不落」安全网：无论模型是否主动调 add_memory，每轮回复都会被提交。
-        source 固定 auto_turn，便于与显式 add 区分。请勿用本工具替代断点（session_checkpoint）。
+        """宿主在每轮 assistant 回复完成后调用一次；事务式接收完整话轮。
+        自动模式按重要内容或累计信息量触发写入，最迟十轮；十轮模式累计十轮；每轮模式立即保存。
+        只有实际调用才会计数，不会自行读取对话。待存轮持久化于数据库，不触碰旧 JSON。
+        source 固定 auto_turn；不自动追加标签。请勿用本工具替代断点（session_checkpoint）。
 
         Args:
-            content: 本轮 assistant 回复原文（必填）。
+            content: 本轮 assistant 回复原文；与用户输入合计超过 1,000,000 字符会拒绝，不截断。
             agent: 哪个 agent 的记忆（默认自动）。
-            user_content: 可选，本轮用户输入原文；提供后连用户发言一并存档，还原完整一轮。
-            section: 分类（默认「对话记录」）。
-            tags: 额外标签（auto_turn 会自动加上）。
+            user_content: 可选，本轮用户输入原文。
+            section: 原始分类（默认空字符串）。
+            tags: 原始标签（默认空字符串，原样保存）。
+            conversation_id: 批次隔离标识，不是读权限隔离；空字符串为独立默认会话。
+            turn_id: 当前会话内稳定的话轮标识，重试必须复用且保持 conversation_id 不变。
+                省略时生成 ID，须复用返回的 turn_id 重试；无 ID 重试无法幂等。
+                同 ID 同请求返回 duplicate，同 ID 不同正文或元数据会拒绝。
 
         Returns (JSON):
-            {"saved": int, "buffered": int, "flushed": int, "source": "auto_turn",
-             "parts": [{"kind": "user"|"assistant", "written": bool, "id"?: int,
-                        "buffered"?: int, "flushed"?: int,
-                        "mode": "sentence"|"chunk", "reason": str}, ...]}
-            parts 为逐条明细数组（2.0.3 起），可遍历查看每条走了哪个模式及原因。
+            saved / parts (int): 本次新建 entries 数；parts 不是列表。
+            flushed (int): 本次关联到 entries 的轮数，不是条目数。
+            received_turns (int): 当前会话累计接收轮数，重复请求不增加。
+            pending_turns (int): 当前会话待存轮数。
+            buffered (bool): 当前轮是否仍待存，不是待存轮数。
+            duplicate (bool): 是否为重复话轮；entry_id 为当前轮关联条目或 null。
+            entry_ids (list[int]): 本次新建条目 ID。
+            conversation_id / turn_id (str): 会话与话轮标识。
+            generated_id (bool) / idempotency_warning (str): ID 生成情况及重试提示。
+            configured_mode / mode / reason (str): 配置模式、本轮判定模式及原因。
+            last_received_at (str | null): 当前会话最近接收时间。
+            source 固定 auto_turn，embedding / graph 为 deferred。
+            助手回复为空时 skipped=true，不计为完整轮。
         """
         res = _core_auto_save_turn(
             agent=agent,
@@ -472,8 +633,129 @@ def create_mcp_server():
             user_content=user_content,
             section=section,
             tags=tags,
+            conversation_id=conversation_id,
+            turn_id=turn_id,
         )
         return json.dumps(res, ensure_ascii=False)
+
+    @mcp.tool()
+    def ingest_local_turns(source: str = "all", apply: bool = False,
+                           include_subagents: bool = False) -> str:
+        """主动读取本机客户端会话记录，把真实完整话轮补交给轮次存储。
+
+        适用场景：宿主没有在每轮回复后调用 auto_save_turn，导致自动累计空转
+        （received_turns 恒为 0）。本工具不需要宿主配合，直接读取客户端已写在
+        磁盘上的会话记录；不修改客户端配置、不安装钩子、不改动客户端数据。
+
+        只使用记录里原生存在的会话与轮次标识作为幂等键，因此可安全重复调用，
+        不会重复计数；用户输入与助手回复均取自记录原文，不会生成或补造内容。
+        注入块（system-reminder、task-notification、浏览器上下文等）不是用户
+        发言，已剔除；只有除注入块外没有真实用户输入、或没有助手回复的轮次会
+        被跳过，绝不伪造。
+
+        Args:
+            source: "all"（默认，读取所有已知客户端）、"zcode" 或 "workbuddy"。
+            apply: 默认 False 只统计不写入（可先看将要提交多少轮）；True 才真正提交。
+            include_subagents: 是否一并读取子代理会话（默认否，子代理对话通常非人类主会话）。
+
+        Returns (JSON):
+            considered / submitted / skipped_incomplete (int): 候选 / 提交 / 跳过轮数。
+            duplicate / saved / buffered (int): 重复未计数 / 本次新建条目 / 仍待存轮数。
+            per_source (dict): 按客户端分别返回上述计数，便于定位哪一端读到了多少。
+            conversations 在单选来源时返回按会话的计数，用于核对第 1—9 轮递增、
+                第 10 轮存档。
+            source / apply (str | bool): 数据来源与实际是否写入。
+        """
+        from heropen import turn_ingest
+
+        if source not in ("all", "zcode", "workbuddy"):
+            return json.dumps({"error": f"暂不支持的数据来源：{source}"}, ensure_ascii=False)
+        if source == "all":
+            readers = (("zcode", turn_ingest.ingest_zcode),
+                       ("workbuddy", turn_ingest.ingest_workbuddy))
+        elif source == "zcode":
+            readers = (("zcode", turn_ingest.ingest_zcode),)
+        else:
+            readers = (("workbuddy", turn_ingest.ingest_workbuddy),)
+        totals = {"considered": 0, "submitted": 0, "skipped_incomplete": 0,
+                  "skipped_invalid": 0, "already_stored": 0, "deferred": 0,
+                  "duplicate": 0, "saved": 0, "buffered": 0, "failed": 0,
+                  "conflicts": 0}
+        per_source = {}
+        errors = []
+        for name, reader in readers:
+            try:
+                summary = reader(apply=bool(apply),
+                                 include_subagents=bool(include_subagents))
+            except Exception as exc:  # noqa: BLE001 - one source must not block others
+                per_source[name] = {"error": f"{type(exc).__name__}: {exc}"}
+                errors.append({"source": name, "kind": "source",
+                               "reason": f"{type(exc).__name__}: {exc}"})
+                continue
+            for item in summary.get("errors") or []:
+                errors.append({"source": name, **item})
+            per_source[name] = {key: summary.get(key) for key in
+                                ("considered", "submitted", "skipped_incomplete",
+                                 "skipped_invalid", "already_stored", "deferred",
+                                 "duplicate", "saved", "buffered", "failed",
+                                 "conflicts", "source")}
+            for key in totals:
+                totals[key] += int(summary.get(key) or 0)
+        # A source can return normally yet fail every submission or reject
+        # turns; that must not be reported as success.
+        failed_sources = [n for n, v in per_source.items() if v.get("error")]
+        problem_sources = [
+            n for n, v in per_source.items()
+            if not v.get("error") and (
+                int(v.get("failed") or 0) > 0 or int(v.get("skipped_invalid") or 0) > 0)
+        ]
+        if failed_sources and len(failed_sources) == len(readers):
+            status = "failed"
+        elif failed_sources or problem_sources:
+            status = ("failed" if sum(int(v.get("submitted") or 0)
+                                      for v in per_source.values()) == 0
+                      and problem_sources else "partial")
+        else:
+            status = "ok"
+        return json.dumps({"ok": status == "ok", "status": status,
+                           "apply": bool(apply), "source": source,
+                           "failed_sources": failed_sources,
+                           "problem_sources": problem_sources,
+                           "errors": errors,
+                           "per_source": per_source, **totals},
+                          ensure_ascii=False)
+
+    @mcp.tool()
+    def turn_storage_status(agent: str | None = None) -> str:
+        """只读查询 agent 的事务式话轮存储状态；不创建数据库、不初始化 schema、不刷新待存轮。
+
+        返回 JSON：database_exists (bool)、received_turns / pending_turns / saved_turns (int)
+        为该 agent 全部会话的累计接收 / 待存 / 已存轮数，buffered (bool) 表示是否有待存轮。
+        conversations 按 conversation_id 返回各会话上述计数和 last_received_at。
+        conversation_id 仅用于批次隔离，不是读权限隔离；此工具可查看该 agent 的全部会话计数。
+        不读取、迁移或删除旧 JSON 缓冲。
+        """
+        agent = resolve_agent(agent)
+        return json.dumps(turn_storage.status(agent=agent), ensure_ascii=False)
+
+    @mcp.tool()
+    def flush_turns(agent: str | None = None, conversation_id: str = "") -> str:
+        """显式保存指定会话的全部待存尾批，即使不足十轮；不修改其他会话或旧 JSON。
+
+        Args:
+            agent: 哪个 agent 的记忆（默认自动）。
+            conversation_id: 批次隔离标识，不是读权限隔离；空字符串仅刷新默认会话，非全部会话。
+
+        Returns (JSON):
+            saved / parts (int): 本次新建 entries 数；flushed (int): 本次写入关联的轮数。
+            received_turns / pending_turns (int): 当前会话累计接收 / 剩余待存轮数。
+            buffered (bool): 当前会话是否仍有待存轮；entry_ids (list[int]): 本次新建条目 ID。
+            conversation_id (str): 本次刷新会话；其余状态字段由事务引擎原样返回。
+        """
+        return json.dumps(
+            _core_flush_turn_buffer(agent=agent, conversation_id=conversation_id),
+            ensure_ascii=False,
+        )
 
     @mcp.tool()
     def update_memory(
@@ -533,6 +815,7 @@ def create_mcp_server():
         Args:
             clear_pending: Set to true after completing initial setup to clear the pending marker.
         """
+        bound_agent = get_bound_agent()
         # Check pending setup marker
         pending = _check_pending_setup(clear=clear_pending)
 
@@ -543,7 +826,8 @@ def create_mcp_server():
         total_memory = 0
         last_memory_at = ""
 
-        for agent in list(AGENTS.keys()):
+        agents = [bound_agent] if bound_agent is not None else list(AGENTS.keys())
+        for agent in agents:
             try:
                 c = conn(agent)
                 total = c.execute("SELECT COUNT(*) FROM entries").fetchone()[0]
@@ -565,11 +849,17 @@ def create_mcp_server():
                 db_connected = False
                 issues.append(f"database connection failed for {agent}")
 
-        # Check MCP config
-        agent_config = Path.home() / ".heropen" / "agent-config.json"
-        if not agent_config.exists():
+        # Check MCP config. A client may register this server through its own
+        # config file rather than the legacy agent-config.json in HERO_PEN_DIR.
+        # Only claim "not found" when we could actually read every known
+        # location; an unreadable or unparseable config is reported as unknown.
+        registered = _mcp_registered(HERO_PEN_DIR)
+        if registered is None:
             mcp_config_found = False
-            issues.append("MCP configuration file not found")
+            issues.append("client configuration could not be fully read to confirm registration")
+        elif not registered:
+            mcp_config_found = False
+            issues.append("no client configuration registers heropen")
 
         version_stale = None
         import importlib.metadata as _ilm
@@ -586,6 +876,8 @@ def create_mcp_server():
             "version": __version__,
             "version_stale": version_stale,
             "agents": stats,
+            "bound_agent": bound_agent,
+            "data_directory": os.path.abspath(HERO_PEN_DIR),
             "db_connected": db_connected,
             "mcp_config_found": mcp_config_found,
             "memory_count": total_memory,
@@ -663,6 +955,7 @@ def create_mcp_server():
     is_loopback = host in ("127.0.0.1", "localhost", "::1")
     mcp.settings.transport_security.enable_dns_rebinding_protection = not is_loopback
 
+    _install_call_observer(mcp)
     return mcp
 
 
