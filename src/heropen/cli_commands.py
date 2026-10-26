@@ -258,12 +258,14 @@ def cmd_recall(args: list[str]) -> None:
 
 def cmd_add(args: list[str]) -> None:
     if _has_help(args):
-        print("用法: heropen add --content \"记忆内容\" [--section 分类] [--tags 标签] [--agent 名称]")
+        print("用法: heropen add \"记忆内容\" [--section 分类] [--tags 标签] [--agent 名称]")
+        print("      heropen add --content \"记忆内容\" [...]（等价写法）")
         return
     agent = get_default_agent()
     section = ""
     content = ""
     tags = ""
+    positional: list[str] = []
 
     i = 0
     while i < len(args):
@@ -288,11 +290,21 @@ def cmd_add(args: list[str]) -> None:
             tags = args[i + 1]
             i += 2
             continue
+        if not a.startswith("--"):
+            positional.append(a)
+            i += 1
+            continue
         i += 1
 
+    # 2.0.7: README/文档示例为 `heropen add "文字"`（位置参数）。此前位置参数被
+    # 静默丢弃且缺参时退出码为 0（Mac 验证 B 级问题#2）——现按优先级取内容：
+    # --content 显式值 > 位置参数拼接。缺内容时退出码 1，方便脚本判错。
+    if not content and positional:
+        content = " ".join(positional)
+
     if not content:
-        print("❌ --content is required")
-        return
+        print("❌ 缺少记忆内容。用法: heropen add \"记忆内容\" 或 heropen add --content \"记忆内容\"", file=sys.stderr)
+        sys.exit(1)
 
     today = date.today().isoformat()
     text = f"{section} {content} {tags}"

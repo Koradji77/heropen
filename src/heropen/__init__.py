@@ -4,7 +4,10 @@ Self-hosted, MCP-native memory system with vector + FTS + LIKE search,
 automatic backup, crash recovery, and multi-agent isolation.
 """
 
-__version__ = "2.0.6"
+# Single source of truth for the version: heropen.core.__version__.
+# (2.0.7: previously duplicated here and drifted from core during the
+#  2.0.6→2.0.7 bump — stdio handshake reads *this* attribute, so the
+#  wheel advertised 2.0.7 while runtime reported 2.0.6. Never hardcode.)
 __all__ = [
     "add_entry", "update_entry",
     "search_vector", "search_fts", "search_graph",
@@ -18,6 +21,7 @@ __all__ = [
 ]
 
 from heropen.core import (
+    __version__,
     add_entry,
     update_entry,
     search_vector,
