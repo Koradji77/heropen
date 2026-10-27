@@ -5,6 +5,7 @@
 遥测或未经声明的外联都会让构建失败。
 
 用法：python3 scripts/assert_no_telemetry.py <repo-root>
+      python3 scripts/assert_no_telemetry.py --selftest   # 只跑守卫自检（正则检出力回归）
 """
 import ipaddress
 import os
@@ -16,7 +17,8 @@ for _stream in (sys.stdout, sys.stderr):
     if hasattr(_stream, "reconfigure"):
         _stream.reconfigure(encoding="utf-8", errors="replace")
 
-ROOT = sys.argv[1] if len(sys.argv) > 1 else "."
+_ARGS = [a for a in sys.argv[1:] if not a.startswith("-")]
+ROOT = _ARGS[0] if _ARGS else "."
 SRC = os.path.join(ROOT, "src")
 
 # 允许出现的硬编码主机（均为本地绑定 / 用户主动触发的可选动作 / 文档引用，非遥测）：
@@ -34,9 +36,70 @@ ALLOWED_DOMAINS = {
 
 TELEMETRY = re.compile(
     r"telemetry|analytics|heartbeat|beacon|tracking|mixpanel|amplitude|"
-    r"posthog|sentry|statsd|datadog|phone.?home",
+    r"posthog|(?<![A-Za-z0-9])sentry(?![A-Za-z0-9])|statsd|datadog|phone.?home",
     re.IGNORECASE,
 )
+# ⚠️ 为什么只有 sentry 带词边界（2026-10-27 修）：
+#   Windows 的 Toolhelp32 进程枚举 API 叫 PROCESSENTRY32 / PROCESSENTRY32W，
+#   裸子串匹配 sentry 会命中 PRO-CESSENTRY-32，导致 connection_status.py 的
+#   Windows 分支被误判为「疑似遥测」（2.0.7 回流后 CI 变红，实为误报）。
+#   真实 Sentry SDK 用法（sentry_sdk / SENTRY_DSN / sentry.io / Sentry.init）
+#   都有非字母数字分隔，词边界足以全部抓住；其余关键词的派生形式
+#   （beaconing / trackingPixel / BACKTRACKING_SEARCH）本身即遥测语义，
+#   故保持子串匹配不动 —— 检出力零损失。
+#   改动本正则前必须先跑 --selftest。
+
+# 守卫自身的回归测试：(代码样本, 是否应被判定为遥测)
+# 目的：任何人收紧/放宽上面的正则时，检出力退化会立刻被发现，而不是静默变弱。
+SELFTEST_CASES: list[tuple[str, bool]] = [
+    # —— 真遥测：必须全部命中（检出力下限）——
+    ("import sentry_sdk", True),
+    ("sentry_sdk.init(dsn)", True),
+    ('SENTRY_DSN = "https://x"', True),
+    ("Sentry.init()", True),
+    ("@sentry.traced", True),
+    ('url = "https://sentry.io/2"', True),
+    ("from posthog import Posthog", True),
+    ('mixpanel.track("event")', True),
+    ("import analytics", True),
+    ('statsd_client.increment("a")', True),
+    ("datadog.dogstatsd()", True),
+    ('self.beacon_url = "http://x"', True),
+    ("beaconing = True", True),
+    ('os.environ["HEROPEN_NO_TELEMETRY"] = "1"', True),
+    ("send_telemetry()", True),
+    ("phone_home()", True),
+    ("trackingPixel()", True),
+    ("BACKTRACKING_SEARCH = 1", True),
+    ("heartbeat_interval = 5", True),
+    ("amplitude.logEvent()", True),
+    # —— 误报样本：必须全部不命中（精度下限）——
+    ("class PROCESSENTRY32(ctypes.Structure):", False),
+    ("pe = PROCESSENTRY32()", False),
+    ("pe.dwSize = ctypes.sizeof(PROCESSENTRY32)", False),
+    ("PROCESSENTRY32W()", False),
+    ("TH32CS_SNAPPROCESS = 0x00000002", False),
+    ("MySentryHandler", False),
+    ("ProcessEntryIterator", False),
+]
+
+
+def selftest() -> int:
+    """校验 TELEMETRY 正则的检出力与精度，返回失败用例数。"""
+    print("-- [0/3] 守卫自检（正则检出力回归）--")
+    fails = 0
+    for sample, expect in SELFTEST_CASES:
+        got = bool(TELEMETRY.search(sample))
+        if got != expect:
+            kind = "漏检（检出力退化）" if expect else "误报"
+            print(f"  ❌ {kind}: 期望 {expect} 实得 {got} | {sample}")
+            fails += 1
+    total = len(SELFTEST_CASES)
+    if fails:
+        print(f"  自检失败 {fails}/{total} 例 —— 正则被改坏，拒绝继续")
+    else:
+        print(f"  ✅ 自检通过 {total}/{total} 例")
+    return fails
 URL_RE = re.compile(r"https?://([^\"' )]+)")
 WHILE_SLEEP = re.compile(r"while\s+True", re.IGNORECASE)
 
@@ -61,6 +124,11 @@ def _py_files():
 
 def main() -> int:
     print("== heropen 零外联断言 ==")
+
+    # ── 0) 守卫自检：正则被改坏时立即失败，而非静默降低检出力 ──
+    if selftest():
+        print("== 零外联断言 FAILED（守卫自检未过）==")
+        return 1
 
     # ── 1) 遥测关键词黑名单 ──
     print("-- [1/3] 检查遥测关键词 --")
@@ -122,4 +190,6 @@ def main() -> int:
 
 
 if __name__ == "__main__":
+    if "--selftest" in sys.argv:
+        sys.exit(1 if selftest() else 0)
     sys.exit(main())
