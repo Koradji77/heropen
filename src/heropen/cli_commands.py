@@ -717,9 +717,13 @@ def cmd_diagnose(args: list[str]) -> None:
             _fail(f"agent-config.json 格式无效: {e}")
             return
     else:
-        _fail("agent-config.json 不存在")
-        _warn("请先运行 heropen install 或 heropen auto-setup")
-        return
+        # A missing agent-config.json is NOT a fatal condition: the MCP server
+        # still works (clients such as Hermes register it their own way, and
+        # databases are created lazily). Aborting here used to hide every later
+        # check — DB connectivity, MCP module import, version — exactly when the
+        # user most needs them. Warn and continue.
+        _warn("agent-config.json 不存在（不致命：MCP 仍可正常工作）")
+        _warn("如需多 agent 隔离，运行 heropen install 或 heropen auto-setup 生成配置")
 
     # ── 2. Database connection ───────────────────────────────────
     print(f"\n{_B}── 数据库连接 ──{_N}")

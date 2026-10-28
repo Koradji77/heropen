@@ -1,5 +1,38 @@
 # heropen 升级指南
 
+## v2.0.7 → v2.0.8
+
+> 说明：本版为**数据完整性与诊断准确性修复版**，由一台 macOS (15.7 / arm64 / Python 3.12) 实机安装反馈驱动。无记忆数据格式变更；**已被历史缺陷破坏的库会在首次连接时自动补建 schema（自愈），无需手工修库**。
+
+### 改动摘要
+
+- 🔴 **修复跨租户数据错位（P0）**：`_connect()` 为跨 agent 搜索 ATTACH 了 `_shared.db`，而 `init_db()` 用未限定 schema 的 `PRAGMA table_info(entries)` 判断是否新库 —— 该探测会解析到 `shared.entries`，误判「已有表」从而跳过 `CREATE TABLE entries`。结果是 agent 自己的库永远缺 `entries` 主表，所有读写靠未限定表名静默落到 `_shared.db`（`entries.agent` 标着该 agent，数据却在共享库）。更严重的是同一分支里的 `ALTER TABLE entries` 会**跨租户改写 `_shared.db` 的结构**。
+  - 修法（三层）：① `init_db()` 走 `_connect(..., attach_shared=False)`，schema 探测/DDL 路径一律不挂载 shared；② 所有探测与 DDL 限定到 `main.`（`PRAGMA main.table_info`、`main._meta`、`ALTER TABLE main.entities`）；③ 判定「是否已初始化」改为按真实标准 —— `main.entries` 是否存在，而不是文件大小（WAL pragma 会把空库撑到 4096 字节，导致建表失败过的库永远看起来「已初始化」、再无自愈机会）。
+  - 附带说明：ATTACH 的 `shared` schema 在本包内**从未被任何 SQL 引用**（跨 agent 读取走 `search_shared()`，它自开独立连接），故保留仅为兼容外部调用方，且不再出现在 schema 路径上。
+- **`health` 不再因缺少 PyYAML 而误报 degraded**：`_mcp_registered()` 是三态（True/False/None），但 `health()` 把「无法判定」（如存在 Hermes 的 `config.yaml` 而 PyYAML 不可用）当成「未注册」处理，于是配置完全正确的安装也报 `status: degraded`。现在 `None` 只记为提示信息，`status` 仅在**数据库断连**或**确认未注册**时降级。该工具通常正是通过一个可用的 MCP 注册被调用的，此前等于在 MCP 调用内部宣称「MCP 未注册」。
+- **PyYAML 升级为基础依赖**：它用于读写 YAML 客户端配置（Hermes 等）。此前不在依赖中，导致 `auto_mcp` 的 `_inject_into_yaml_config()` 在缺它时 `return "skipped"` —— 而调用方不处理 `skipped`，于是 YAML 客户端被**静默跳过**，且 `print_setup_summary()` 因计数为 0 反过来告诉用户「没找到任何配置文件」。现在：依赖入基础包（全平台有 wheel + sdist 兜底，不影响 ARM64 可装）；`skipped` 进入结果并在摘要里可见，附修复提示。
+- **`AGENTS` 快照导致的结论不一致**：`AGENTS` 是 import 期快照，长驻的 MCP 进程看不到启动后才创建的 `agent-config.json`，于是 `list`/`search` 与 `health` 对同一状态给出不同答案（list 有 agent、health 报 0）。新增 `core.current_agents()` 做每次调用的新鲜读取，`health` 改用它；`AGENTS` 保持快照语义不变（避免改动全局对象在长驻进程里产生并发竞态）。
+- **向量检索的回退不再静默**：`search_vector` 的最高相似度低于阈值时直接返回 `None` 触发 FTS/LIKE 回退，调用方只看到 `method: "like"`，会误判「向量没工作」。现在阈值可由 `HEROPEN_VECTOR_MIN_SIM` 配置（默认 0.5，非法值回退默认、越界钳制到 [0,1]），且因低于阈值而回退时，`search_memory` 返回值附带 `vector_fallback: {best_sim, floor}`，可区分「向量没匹配到」与「向量弱匹配被主动丢弃」。
+- **`heropen diagnose` 缺 `agent-config.json` 时不再中止**：此前直接 `_fail` + `return`，跳过后续全部检查（数据库、MCP 模块、版本），而此时 MCP 完全可以工作。改为 warning 并继续。
+- **ARM64 embedding 提示按平台区分**：Apple Silicon 上 onnxruntime **有官方 wheel**，此前却提示「ARM64 上常见：无匹配 wheel 或 Python 版本过新」，与同函数返回的正确 hint 自相矛盾，把人引向不存在的平台问题。现在 macOS arm64 提示「通常是尚未安装」，Linux aarch64 保留原提示。
+- **新增回归门禁**：`scripts/assert_regressions.py`（11 条规则，每条带注入锚点），接入 CI —— `build-test` 跑 `--once`，独立 `gate-bidir` job 跑 `--bidir`（把历史缺陷逐条重新注入实现、要求门禁失败，再还原要求通过）并在最后 `git diff --exit-code` 确认注入/还原未改动工作树。
+
+### 升级
+
+```bash
+pip install --upgrade heropen
+```
+
+### 行为兼容
+
+- 已有记忆数据无需迁移，无数据格式变更。
+- **受上述 P0 影响过的库会在首次 `conn()` 时自动补建 `entries` 等表（自愈）**；已写入 `_shared.db` 的历史条目**不会**被自动搬迁（heropen 只标不删），如需归位请显式导出/导入。
+- `health` 的 `mcp_config_found` 新增 `null`（无法判定）取值，与 `true`/`false` 并列；`status` 判定相应放宽。依赖该字段的下游若做过严格布尔判断，请注意 `null` 分支。
+- `search_memory` 返回值可能多出 `vector_fallback` 字段（仅在弱匹配回退时出现）。
+- MCP 工具集合（12 个）与免费额度（8 个 agent）不变。
+
+---
+
 ## v2.0.6 → v2.0.7
 
 > 说明：本版为**能力回流版**——把 macOS 桌面版已验证的「话轮摄取」能力并入通用版，修复「宿主未接钩子时自动存档空转」的缺口。无记忆数据格式变更，无行为破坏。

@@ -406,6 +406,7 @@ def auto_setup_mcp(agent: str = "agent") -> dict:
         "configured": [],
         "already_had": [],
         "errors": [],
+        "skipped": [],
         "sse_started": False,
         "scheduler_registered": False,
     }
@@ -425,6 +426,12 @@ def auto_setup_mcp(agent: str = "agent") -> dict:
                     result["configured"].append(f"{label} ({p})")
                 elif status == "exists":
                     result["already_had"].append(f"{label} ({p})")
+                elif status == "skipped":
+                    # YAML client config found but not writable without PyYAML.
+                    # Must stay visible: otherwise a bare install silently skips
+                    # exactly the YAML-configured clients (e.g. Hermes) and the
+                    # summary would wrongly say "no config files found".
+                    result["skipped"].append(f"{label} ({p})")
                 elif status == "error":
                     result["errors"].append(f"{label} ({p})")
                 if is_wb and status in ("added", "exists"):
@@ -440,7 +447,7 @@ def auto_setup_mcp(agent: str = "agent") -> dict:
 
 def print_setup_summary(result: dict) -> None:
     """Print a human-readable summary of the auto-setup."""
-    total = len(result["configured"]) + len(result["already_had"]) + len(result["errors"])
+    total = len(result["configured"]) + len(result["already_had"]) + len(result["errors"]) + len(result.get("skipped", []))
     if total == 0:
         print("\u26a0\ufe0f No supported agent config files found.")
         print(" Manual setup: https://heropen.net/docs/")
@@ -458,6 +465,11 @@ def print_setup_summary(result: dict) -> None:
         print(f"\u26a0\ufe0f {len(result['errors'])} failed:")
         for item in result["errors"]:
             print(f"   \u2717 {item}")
+    if result.get("skipped"):
+        print(f"\u26a0\ufe0f {len(result['skipped'])} YAML config(s) skipped (PyYAML missing):")
+        for item in result["skipped"]:
+            print(f"   \u00b7 {item}")
+        print("   Fix: pip install 'heropen[all]' (or 'pip install pyyaml'), then re-run heropen install")
     if result.get("sse_started"):
         print("  \U0001f680 WorkBuddy SSE server started (http://127.0.0.1:8090/sse)")
     if result.get("scheduler_registered"):

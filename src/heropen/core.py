@@ -49,7 +49,7 @@ get_bound_agent()
 
 # ─── Paths ────────────────────────────────────────────────────
 
-__version__ = "2.0.7"
+__version__ = "2.0.8"
 _HPD = os.environ.get("HERO_PEN_DIR", "")
 if _HPD:
     HERO_PEN_DIR = _HPD
@@ -66,6 +66,34 @@ BACKUP_KEEP_REMOTE = 7
 FREE_AGENT_LIMIT = 8
 PLUS_AGENT_LIMIT = 8
 OVERFLOW_AGENT = "_shared"
+
+# ─── Vector search relevance floor ────────────────────────────
+# Below this cosine similarity a vector hit is considered noise and the search
+# falls back to FTS/LIKE. Configurable because the right floor depends on the
+# embedding model and corpus; the default matches the historical behaviour.
+# Override with env HEROPEN_VECTOR_MIN_SIM (float in [0, 1]).
+VECTOR_MIN_SIM_DEFAULT = 0.5
+
+
+def get_vector_min_sim() -> float:
+    """Relevance floor for vector search. Env-overridable, defensively parsed."""
+    raw = os.environ.get("HEROPEN_VECTOR_MIN_SIM", "").strip()
+    if not raw:
+        return VECTOR_MIN_SIM_DEFAULT
+    try:
+        val = float(raw)
+    except ValueError:
+        return VECTOR_MIN_SIM_DEFAULT
+    # Clamp to a sane range; an out-of-range value silently disabling vector
+    # search would be worse than ignoring it.
+    return min(max(val, 0.0), 1.0)
+
+
+# Set by search_vector() when it returns None because the best match fell under
+# the relevance floor: {"best_sim": float, "floor": float}, else None. Lets the
+# MCP layer report "vector matched weakly (0.42 < 0.5), used FTS" instead of an
+# opaque "method: like" that makes a working vector index look broken.
+LAST_VECTOR_FALLBACK: dict | None = None
 
 
 def _load_agent_config() -> dict:
@@ -105,6 +133,21 @@ def _load_agents() -> dict[str, str]:
     return {}
 
 AGENTS: dict[str, str] = _load_agents()
+
+
+def current_agents() -> dict[str, str]:
+    """Fresh read of the agent→db mapping from agent-config.json.
+
+    ``AGENTS`` above is an import-time snapshot. In a long-lived process (the
+    MCP server) a config created or edited *after* startup is invisible to it,
+    which used to make health() and list/search disagree — list returned the
+    new agents while health reported zero. Prefer this for any per-call view;
+    keep using AGENTS only where a stable startup snapshot is actually wanted.
+    Falls back to AGENTS when no config is present (same as _load_agents).
+    """
+    fresh = _load_agents()
+    return fresh if fresh else dict(AGENTS)
+
 
 def _free_tier_agents() -> list[str]:
     """First get_agent_limit() agents from AGENTS (excluding _shared)."""
@@ -381,7 +424,17 @@ def get_embedding_status(*, refresh: bool = False) -> dict:
     except Exception as exc:
         status["detail"] = f"onnxruntime 不可用: {exc}"
         if is_arm64():
-            status["detail"] += "（ARM64 上常见：无匹配 wheel 或 Python 版本过新）"
+            _sys, _mach = _platform_triplet()
+            if _sys == "Darwin":
+                # Apple Silicon HAS official onnxruntime wheels; the real cause
+                # is almost always "not installed yet", not "no wheel exists".
+                # Don't send users hunting for a non-existent platform problem.
+                status["detail"] += (
+                    "（Apple Silicon 有官方 onnxruntime wheel；"
+                    "通常是尚未安装，按上面的 hint 装 heropen[embedding] 即可）"
+                )
+            else:
+                status["detail"] += "（ARM64 上常见：无匹配 wheel 或 Python 版本过新）"
         _EMBEDDING_STATUS_CACHE = dict(status)
         return status
 
@@ -488,8 +541,15 @@ def cosine_similarity(a: list[float], b: list[float]) -> float:
 
 # ─── Database connection ───────────────────────────────────────
 
-def _connect(agent: str | None = None) -> sqlite3.Connection:
-    """Open a SQLite connection with pragmas (no schema creation)."""
+def _connect(agent: str | None = None, *, attach_shared: bool = True) -> sqlite3.Connection:
+    """Open a SQLite connection with pragmas (no schema creation).
+
+    ``attach_shared=False`` is REQUIRED for any schema-introspection or DDL
+    path. With _shared.db attached, an unqualified ``PRAGMA table_info(entries)``
+    resolves to ``shared.entries`` and unqualified ``ALTER TABLE entries``
+    silently mutates the SHARED database — which is both a wrong-schema
+    judgement and a cross-tenant write. See init_db().
+    """
     agent = resolve_agent(agent)
     if agent is None:
         agent = get_default_agent()
@@ -498,12 +558,19 @@ def _connect(agent: str | None = None) -> sqlite3.Connection:
     c.execute("PRAGMA journal_mode=WAL")
     # NORMAL is durable enough with WAL and much safer than OFF on crash/power loss.
     c.execute("PRAGMA synchronous=NORMAL")
-    # ATTACH _shared.db for cross-agent search (silent if not exists)
-    if get_bound_agent() is None and agent != "_shared":
+    # ATTACH _shared.db for cross-agent search (silent if not exists).
+    # Note: nothing in this package actually queries the attached ``shared``
+    # schema — cross-agent reads go through search_shared(), which opens its
+    # own separate connection to _shared.db. The attach is retained only for
+    # backwards compatibility with external callers that may rely on it, and
+    # it is deliberately skipped on every schema-introspection / DDL path
+    # because unqualified statements would otherwise resolve to the SHARED
+    # database instead of this agent's own.
+    if attach_shared and get_bound_agent() is None and agent != "_shared":
         _shared_path = os.path.join(HERO_PEN_DIR, "_shared.db")
         if os.path.exists(_shared_path):
             try:
-                c.execute(f"ATTACH DATABASE ? AS shared", (_shared_path,))
+                c.execute("ATTACH DATABASE ? AS shared", (_shared_path,))
             except Exception:
                 pass
     return c
@@ -519,10 +586,31 @@ def conn(agent: str | None = None) -> sqlite3.Connection:
     if agent is None:
         agent = get_default_agent()
     path = db_path(agent)
-    # sqlite3 leaves a 0-byte file when it connects to a path that was never
-    # initialized, so treat both "missing" and "empty" as a fresh database.
-    if (not os.path.exists(path)) or os.path.getsize(path) == 0:
+    if not os.path.exists(path):
         init_db(agent)
+        return _connect(agent)
+
+    # A size check alone is not enough: the WAL pragma grows a fresh file to
+    # 4096 bytes, so a database whose schema creation failed once would look
+    # "already initialized" forever (that is how the ATTACH bug left agent
+    # stores permanently without an entries table). Probe the real criterion —
+    # does main.entries exist? — which also self-heals previously broken stores.
+    #
+    # The probe runs on the connection we are about to return, NOT a second
+    # connection: opening SQLite twice per call nearly doubled the cost of this
+    # hot path (~9ms/call measured). Qualified on ``main`` so an attached
+    # _shared.db can never answer on this agent's behalf.
+    c = _connect(agent)
+    try:
+        healthy = c.execute(
+            "SELECT 1 FROM main.sqlite_master WHERE type='table' AND name='entries'"
+        ).fetchone() is not None
+    except Exception:
+        healthy = False
+    if healthy:
+        return c
+    c.close()
+    init_db(agent)
     return _connect(agent)
 
 
@@ -531,9 +619,13 @@ SCHEMA_VERSION = 2
 
 
 def _get_schema_version(c) -> int:
-    """Read schema version from _meta table. Returns 0 if no version set."""
+    """Read schema version from _meta table. Returns 0 if no version set.
+
+    Qualified on ``main`` so an attached sibling database can never supply
+    someone else's version number (which would skip this agent's own setup).
+    """
     try:
-        cur = c.execute("SELECT value FROM _meta WHERE key='schema_version'")
+        cur = c.execute("SELECT value FROM main._meta WHERE key='schema_version'")
         row = cur.fetchone()
         return int(row[0]) if row else 0
     except Exception:
@@ -542,8 +634,8 @@ def _get_schema_version(c) -> int:
 
 def _set_schema_version(c, version: int) -> None:
     """Write schema version to _meta table (idempotent)."""
-    c.execute("CREATE TABLE IF NOT EXISTS _meta (key TEXT PRIMARY KEY, value TEXT)")
-    c.execute("INSERT OR REPLACE INTO _meta (key, value) VALUES ('schema_version', ?)", (str(version),))
+    c.execute("CREATE TABLE IF NOT EXISTS main._meta (key TEXT PRIMARY KEY, value TEXT)")
+    c.execute("INSERT OR REPLACE INTO main._meta (key, value) VALUES ('schema_version', ?)", (str(version),))
 
 
 # ─── Init ──────────────────────────────────────────────────────
@@ -570,13 +662,20 @@ def init_db(agent: str | None = None) -> None:
     auto_backup(agent)
 
     _ensure_entities_file()
-    c = _connect(agent)
+    # NEVER attach _shared.db on this path: every probe and DDL statement below
+    # is unqualified, so an attached sibling with the same table names would
+    # hijack the "is this a fresh database?" judgement and receive the ALTERs.
+    c = _connect(agent, attach_shared=False)
 
     version = _get_schema_version(c)
 
     if version == 0:
-        # Fresh install OR pre-v1 DB upgrade
-        cur = c.execute("PRAGMA table_info(entries)")
+        # Fresh install OR pre-v1 DB upgrade.
+        # Probed on ``main`` explicitly: with an attached _shared.db an
+        # unqualified PRAGMA resolves to shared.entries and reports 9 columns,
+        # which used to skip CREATE TABLE entries and leave the agent's own
+        # database without it — all writes then silently landed in _shared.db.
+        cur = c.execute("PRAGMA main.table_info(entries)")
         cols = {r[1] for r in cur.fetchall()}
 
         if not cols:
@@ -656,10 +755,10 @@ def init_db(agent: str | None = None) -> None:
                 );
             """)
             for tbl in ["entities", "relations"]:
-                tcur = c.execute(f"PRAGMA table_info({tbl})")
+                tcur = c.execute(f"PRAGMA main.table_info({tbl})")
                 tcols = {r[1] for r in tcur.fetchall()}
                 if tbl == "entities" and "description" not in tcols:
-                    c.execute("ALTER TABLE entities ADD COLUMN description TEXT DEFAULT ''")
+                    c.execute("ALTER TABLE main.entities ADD COLUMN description TEXT DEFAULT ''")
 
         # Mark schema version (v1 base)
         _set_schema_version(c, 1)
@@ -1301,7 +1400,17 @@ def search_graph(query: str, limit: int = 5, agent: str | None = None) -> list |
 # ─── Search ────────────────────────────────────────────────────
 
 def search_vector(query: str, limit: int = 5, agent: str | None = None) -> list | None:
-    """Vector semantic search. Returns None (triggers FTS fallback) when no match or all scores < 0.5."""
+    """Vector semantic search. Returns None (triggers FTS fallback) when there is
+    no embedding, no rows, or the best similarity is below get_vector_min_sim().
+
+    When results are dropped purely because they fell under the relevance floor,
+    the best discarded score is exposed via module global LAST_VECTOR_FALLBACK
+    so callers can tell "vector matched nothing" from "vector matched weakly and
+    we chose FTS instead" — previously indistinguishable, which made a working
+    vector index look broken.
+    """
+    global LAST_VECTOR_FALLBACK
+    LAST_VECTOR_FALLBACK = None
     agent = resolve_agent(agent)
     c = conn(agent or get_default_agent())
     query_emb = get_embedding(query)
@@ -1333,7 +1442,10 @@ def search_vector(query: str, limit: int = 5, agent: str | None = None) -> list 
     top = [d for _, d in scored[:limit]]
     c.close()
 
-    if top and scored and scored[0][0] < 0.5:
+    floor = get_vector_min_sim()
+    if top and scored and scored[0][0] < floor:
+        # Record why we fell back: the best score we rejected, and the floor.
+        LAST_VECTOR_FALLBACK = {"best_sim": round(scored[0][0], 4), "floor": floor}
         return None  # trigger FTS fallback
     return top if top else None
 

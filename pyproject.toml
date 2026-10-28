@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "heropen"
-version = "2.0.7"
+version = "2.0.8"
 description = "heropen — AI Agent Long-term Memory System"
 readme = "README.md"
 requires-python = ">=3.10"
@@ -22,6 +22,16 @@ dependencies = [
     # Pure-Python MCP runtime; required by `heropen mcp` / `heropen-mcp`.
     # mcp 2.x renamed FastMCP → MCPServer and moved modules — pin <2 until we adapt.
     "mcp>=1.6,<2",
+    # Reading/writing YAML client configs (Hermes `~/.hermes/config.yaml` and
+    # any other YAML-configured MCP client). Without it, auto-setup SILENTLY
+    # skips those clients and health cannot verify registration — so a plain
+    # `pip install heropen` would quietly fail to configure exactly the clients
+    # that use YAML. Same reasoning as the tray deps below: if the feature must
+    # work after a bare install, its dependency cannot be optional.
+    # PyYAML ships wheels for every platform we support (incl. Linux aarch64 /
+    # macOS arm64 / Windows arm64) and falls back to a pure-Python build, so
+    # this does not jeopardise the "installs everywhere" guarantee.
+    "PyYAML>=6.0",
     # Windows tray badge. The badge is the entry point to the graphical workbench
     # and the per-turn save modes, so it must be present after a plain
     # `pip install heropen` — not hidden behind an extra. Guarded by

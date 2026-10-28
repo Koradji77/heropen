@@ -33,3 +33,39 @@ jobs:
         run: |
           heropen --help
           heropen status
+
+      # Regression gate for the defects found on a real macOS install
+      # (2026-10-28): cross-tenant schema/DDL bleed via ATTACH _shared,
+      # health reporting degraded only because PyYAML was missing, AGENTS
+      # import-time snapshot disagreeing with list/search, the silent vector
+      # similarity floor, doctor aborting on a missing agent-config.json, and
+      # the misleading ARM64 embedding hint. Each rule is bidirectionally
+      # verified locally; here we assert the implementation still satisfies it.
+      - name: Regression gate
+        run: python scripts/assert_regressions.py --once
+
+  # Separate job so the matrix stays fast: this one re-injects each historical
+  # defect and requires the gate to FAIL, then restores and requires it to pass.
+  # It catches "the gate was edited until it could no longer fail".
+  gate-bidir:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python 3.12
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install package (provides mcp + PyYAML for the gate)
+        run: |
+          python -m pip install --upgrade pip
+          pip install .
+
+      - name: Bidirectional gate verification
+        run: python scripts/assert_regressions.py --bidir
+
+      - name: Confirm injection left the tree byte-identical
+        run: |
+          git diff --exit-code
+          echo "working tree clean after inject/restore"

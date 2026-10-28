@@ -37,6 +37,10 @@ from heropen.core import (
 from heropen.core import auto_save_turn as _core_auto_save_turn
 from heropen.core import flush_turn_buffer as _core_flush_turn_buffer
 from heropen import turn_storage
+# Imported as a module (not a symbol) on purpose: LAST_VECTOR_FALLBACK is
+# reassigned inside core.search_vector(), so a `from core import X` binding
+# would freeze the first value and never see updates.
+from heropen import core as _heropen_core
 from heropen.core import session_checkpoint as _core_checkpoint
 from heropen.core import session_recover as _core_recover
 from heropen import __version__
@@ -429,6 +433,10 @@ def create_mcp_server():
         agent = resolve_agent(agent)
         limit = min(limit, 20)
         results = search_vector(query, limit, agent)
+        # Capture immediately: LAST_VECTOR_FALLBACK is a module global that the
+        # next search_vector() call resets. Non-None means vector ran but its
+        # best hit fell under the relevance floor — not "vector is broken".
+        vector_fallback = _heropen_core.LAST_VECTOR_FALLBACK if results is None else None
         method = "vector"
         if not results:
             keywords = [k.strip() for k in query.split() if k.strip()]
@@ -512,10 +520,19 @@ def create_mcp_server():
         except Exception:
             pass
 
-        return json.dumps(
-            {"method": method, "count": len(results), "results": results[:limit], "time_gap_hours": _compute_time_gap(results), "time_context": build_conversation_primer(agent), "conflict_resolution": conflict_resolution},
-            ensure_ascii=False,
-        )
+        payload = {
+            "method": method,
+            "count": len(results),
+            "results": results[:limit],
+            "time_gap_hours": _compute_time_gap(results),
+            "time_context": build_conversation_primer(agent),
+            "conflict_resolution": conflict_resolution,
+        }
+        if vector_fallback:
+            # Surface why vector lost to FTS/LIKE, so a caller can tell a weak
+            # semantic match from a non-working vector index.
+            payload["vector_fallback"] = vector_fallback
+        return json.dumps(payload, ensure_ascii=False)
 
     @mcp.tool()
     def prime_conversation(agent: str | None = None) -> str:
@@ -826,7 +843,7 @@ def create_mcp_server():
         total_memory = 0
         last_memory_at = ""
 
-        agents = [bound_agent] if bound_agent is not None else list(AGENTS.keys())
+        agents = [bound_agent] if bound_agent is not None else list(_heropen_core.current_agents().keys())
         for agent in agents:
             try:
                 c = conn(agent)
@@ -851,15 +868,26 @@ def create_mcp_server():
 
         # Check MCP config. A client may register this server through its own
         # config file rather than the legacy agent-config.json in HERO_PEN_DIR.
-        # Only claim "not found" when we could actually read every known
-        # location; an unreadable or unparseable config is reported as unknown.
+        # _mcp_registered() is tri-state: True = found, False = every known
+        # location was readable and none declared heropen, None = could not
+        # determine (e.g. a Hermes YAML config exists but PyYAML is missing).
+        # "Unknown" must NOT be reported as a failure: this tool is very often
+        # reached *through* a working MCP registration, so claiming
+        # "not registered" from inside that call contradicts the evidence and
+        # used to pin status to "degraded" on perfectly healthy installs.
         registered = _mcp_registered(HERO_PEN_DIR)
         if registered is None:
-            mcp_config_found = False
-            issues.append("client configuration could not be fully read to confirm registration")
+            mcp_config_found = None
+            issues.append(
+                "client registration could not be verified from config files "
+                "(install PyYAML to read YAML client configs; this does not "
+                "affect operation)"
+            )
         elif not registered:
             mcp_config_found = False
             issues.append("no client configuration registers heropen")
+        else:
+            mcp_config_found = True
 
         version_stale = None
         import importlib.metadata as _ilm
@@ -870,8 +898,12 @@ def create_mcp_server():
         except Exception:
             pass
 
+        # status degrades only on a real fault: a broken DB connection, or a
+        # *confirmed* absence of registration (mcp_config_found is False).
+        # An unverifiable registration (None) is informational, not a fault.
+        _healthy = db_connected and mcp_config_found is not False
         result = {
-            "status": "ok" if (db_connected and mcp_config_found) else "degraded",
+            "status": "ok" if _healthy else "degraded",
             "server": "heropen-mcp",
             "version": __version__,
             "version_stale": version_stale,
